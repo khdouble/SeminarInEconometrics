@@ -1,0 +1,243 @@
+---
+title: "계량경제학 세미나: 실증분석과 변수 선택"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output: 
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    transition: faster
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = 'center')
+
+```
+
+# 1. 선형 회귀모형과 실증분석의 기초
+
+## 모집단 선형회귀모형의 이해
+
+선형 회귀는 모집단 회귀선과 그 기울기를 추정할 수 있게 한다.
+
+$$Y_{i}=\beta_{0}+\beta_{1}X_{i}+u_{i},i=1,...,n$$
+
+* **변수 구성**: $n$개의 관측치 $(X,Y)$가 있으며, $X$는 독립 변수(regressor), $Y$는 종속변수, $\beta_{0}$는 절편, $\beta_{1}$은 기울기, $u_{i}$는 회귀 오차(regression error)를 의미한다.
+* **회귀 오차($u_i$)의 본질**: 회귀 오차는 생략된 요인(omitted factors)으로 구성되며, 이는 $X$ 외에 $Y$에 영향을 미치는 다른 요인들이다. 또한, $Y$의 측정 과정에서 발생하는 오차도 포함된다.
+* **모집단 회귀선과 기울기**: 모집단 회귀선은 $X$가 주어졌을 때 $Y$의 조건부 기대값이며, 기울기는 $X$의 두 값이 1만큼 차이 날 때 $Y$ 기대값의 차이이다.
+
+## 실증분석의 두 가지 목적: 인과 추론 vs 예측
+
+추정된 회귀식은 다음 두 가지 주요 용도로 사용될 수 있다.
+
+* **인과 추론 (Causal Inference)**: $X$의 변화가 $Y$에 미치는 인과적 효과를 분석하는 것이다.
+* 인과 효과란 무작위 대조 실험(randomized controlled experiment)에서 측정되는 것처럼 $Y$ 기대값의 차이로 정의된다.
+* 이진 처치에서 인과 효과를 추정하려면, 무작위 배정 또는 준무작위 배정이 필요하다. 이는 처치변수($X$)가 $Y$의 다른 결정 요인들과 상관관계를 가지지 않도록 보장하여 교란 변수(confounding variables)를 제거할 수 있도록 돕는다.
+
+
+* **예측 (Prediction)**: 데이터셋에 없는 관측치에 대해, $X$가 주어졌을 때 $Y$의 값을 예측하는 것이다.
+
+인과 추론과 예측은 데이터에 대해 서로 다른 요구 사항을 가지지만, 동일한 회귀 분석 도구를 사용한다.
+
+## 단순 선형 회귀모형 예시
+
+시험성적($Y$)과 학급크기($X$)의 관계를 알고 싶다고 할 때, 가장 먼저 할 일은 산포도를 그려보는 것이다.
+두 변수 사이의 관계는 선형 방정식 $Y=\beta_{0}+\beta_{1}\times X+\epsilon$ 으로 나타낸다.
+
+```{r simple_reg, eval=FALSE}
+# Create sample data
+STR <- c(15, 17, 19, 20, 22, 23.5, 25) 
+TestScore <- c(680, 640, 670, 660, 630, 660, 635) 
+
+# create a scatterplot of the data
+plot(TestScore ~ STR, ylab = "Test Score", pch=20)
+
+```
+
+# 2. 다변량 회귀분석과 모형의 가정
+
+## 다변량 선형회귀모형 구조
+
+독립변수 여러 개(예: 교육연수, 경력, 나이 등)를 사용하여 종속변수(예: 임금)를 분석한다.
+
+$$Y=\beta_{0}+\beta_{1}X_{1}+\beta_{2}X_{2}+\cdot\cdot\cdot+\beta_{k}X_{k}+\epsilon$$
+
+* $Y$: 종속변수
+* $X_{1},X_{2},...,X_{k}$: 독립변수들
+* $\beta_{1},\beta_{2}...\beta_{k}$: 추정하려는 계수들
+* $\epsilon$: 오차항
+* 일반적으로, $Y_{i}=\beta_{0}+\beta_{1}X_{i}+\epsilon$ 로 표현한다.
+
+## 다변량 회귀모형의 핵심 가정 (5가지)
+
+* **선형성(Linearity)**: 종속변수와 독립변수 간의 관계가 선형적이다.
+* **독립변수들의 비상관성(No Perfect Multicollinearity)**: 독립변수들 간 완벽하게 상관관계가 있으면 안 된다.
+* **오차항의 등분산성(Homoscedasticity)**: 모든 관측치에 대해 오차항의 분산이 동일하다.
+* **오차항의 독립성(No Autocorrelation)**: 오차항들 간에 자기상관이 없어야 한다.
+* **오차항의 정규성(Normality)**: 오차항이 정규분포를 따른다고 가정하며, 표본이 큰 경우 중심극한정리에 의해 완화 가능하다.
+
+## 다변량 선형 회귀모형 R 실습
+
+무작위로 생성한 데이터를 바탕으로 다변량 모형을 구축해 본다.
+
+```{r mult_reg, eval=FALSE}
+set.seed(123) 
+N <- 100 
+
+x1 <- runif(N, 1, 10) # 독립변수 
+x2 <- rnorm(N, 50, 10) # 독립변수 
+y <- 3 + 2*x1 + 0.5*x2 + rnorm(N, 0, 5) # 종속변수 
+
+df <- data.frame(y, x1, x2) 
+
+# 회귀모형 추정
+model <- lm(y ~ x1 + x2, data = df) 
+summary(model)
+
+```
+
+# 3. 실증분석 응용: Mincer 임금방정식
+
+## Mincer (1974) 임금방정식의 이해
+
+* **핵심 아이디어**: 개인의 교육연수(education)가 임금(wage)에 미치는 영향을 파악한다. 경력(experience) 및 경력 제곱(experience^2) 등 추가 독립변수를 포함하여 임금 결정요인을 분석한다.
+* **방정식 형태**:
+
+$$\ln(wage)=\beta_{0}+\beta_{1}\times education+\beta_{2}\times experience+\beta_{3}\times experience^{2}+\epsilon$$
+
+
+* **분석 목적**: 교육이 임금에 어떤 영향을 미치는지, 경력 변수가 어떤 조절 효과를 갖는지 확인한다. 실제 적용 시에는 산업더미, 지역더미, 가구특성(결혼 여부, 자녀 수), 개인특성(성별, 인종, 건강 상태 등)을 추가로 고려할 수 있다.
+
+## Mincer 임금방정식 해석과 시사점
+
+```{r mincer, eval=FALSE}
+library(wooldridge) 
+data("wage1") 
+
+model_wage <- lm(lwage ~ educ + exper + I(exper^2) + tenure, data = wage1) 
+
+```
+
+* **계수 해석**: $\beta_{education}$ (교육연수) 계수가 0.10이라면, 교육연수가 1년 증가할 때 임금이 약 10% 증가함을 의미한다(로그 임금 모형 기준).
+* **정책적 함의**: 교육투자의 경제적 효과를 정량화함으로써, 정부나 기관의 교육투자 정책 결정에 활용이 가능하다.
+* **연구 확장**: 더 많은 통제변수(지역 더미, 산업 더미 등)를 추가하거나 표본크기를 확장하여 결과의 외적 타당성(External validity)을 검토할 수 있다.
+
+# 4. 모델 최적화: 변수 선택의 필요성
+
+## 왜 변수 선택이 중요한가?
+
+* 설명변수가 너무 많은 경우(overfitting), 모델이 복잡해져서 해석이 어렵다.
+* 너무 많은 더미·개인특성 변수를 한꺼번에 넣으면 자유도가 줄고 해석이 복잡해지는 문제 상황이 발생한다.
+* 불필요한 변수가 많으면 추정 불안정, 다중공선성(Multicollinearity) 문제가 발생 가능하다.
+* 따라서, 최소한의 변수로 모형을 단순화하여 해석을 용이하게 하고 예측 성능을 개선해야 한다. 적절한 변수 선택 절차를 통해 유의미한 변수만 남기는 방법을 고려해야 한다.
+* **경제학 맥락**: 임금 방정식에서 모든 변수를 무작정 포함하기보다, 이론·통계 검정·해석가능성 등을 종합 고려해 선택할 필요가 있다.
+
+## 변수 선택 기법 1: 단계적 선택과 정보 기준
+
+* **단계적 선택(Stepwise Selection)** 
+  * **Forward Selection**: 하나씩 변수 추가 (AIC, BIC, p-value 등 기준).
+  * **Backward Selection**: 모든 변수로 시작 후, 불필요한 변수 제거.
+  * **Stepwise**: Forward와 Backward 절차를 결합하여 반복 수행.
+
+
+* **정보기준에 기반한 방법 (Information Criterion)** 
+  * **AIC** (Akaike Information Criterion) 및 **BIC** (Bayesian Information Criterion) 활용.
+  * 모델의 적합도(우도)에서 변수 수에 기반한 페널티 항을 빼어 모델을 비교한다.
+  * BIC는 AIC보다 복잡한 모델에 더 큰 페널티를 부여하므로, 변수 수가 더 적어지는 편향이 있다.
+
+
+
+## 변수 선택 기법 2: 벌점화 회귀 (Penalized Regression)
+
+벌점화 기법은 수많은 변수 중 중요 변수를 자동 선택하고 과적합(overfitting)을 방지하는 데 유용하다.
+
+* **LASSO (Least Absolute Shrinkage and Selection Operator)** 
+   * 특정 변수의 계수를 0으로 만드는 특징이 있어 자동 변수 선택 효과를 낸다.
+ 
+* **Ridge Regression** 
+  * 계수를 0으로 만들지는 않지만, 계수의 크기를 축소(shrink)하는 효과가 있다.
+ 
+* **Elastic Net** 
+  * Lasso와 Ridge의 페널티를 혼합한 기법이다.
+
+# 5. R 실습: 변수 선택 기법의 적용
+
+## 실습 1: AIC 기반 Stepwise 변수 선택
+
+```{r aic_stepwise, eval=FALSE}
+data("wage1") 
+
+# 전체 변수 포함 (full) 및 절편만 포함 (null)
+full_model <- lm(lwage ~ educ + exper + I(exper^2) + tenure + married + female + nonwhite, data = wage1) 
+null_model <- lm(lwage ~ 1, data = wage1) 
+
+# Backward Selection
+backward_step <- step(full_model, direction = "backward") 
+
+# Forward Selection
+forward_step <- step(null_model, direction = "forward", scope = list(lower = null_model, upper = full_model)) 
+
+# Stepwise Selection
+stepwise_model <- step(null_model, direction = "both", scope = list(lower = null_model, upper = full_model)) 
+
+```
+
+## 실습 1 (계속): Stepwise AIC 변화 시각화
+
+```{r aic_plot, eval=FALSE}
+# stepwise_result의 anova 테이블에는 단계별 AIC가 기록됨 
+anova_table <- stepwise_model$anova 
+AIC_values <- anova_table$AIC 
+
+# 진행될수록 AIC가 어떻게 변하는지 보여주는 플롯 
+plot(AIC_values, type = "b", pch=19, 
+     xlab="Step", ylab="AIC", 
+     main="AIC changes during Stepwise Selection") 
+
+```
+
+## 실습 2: LASSO 회귀분석 (glmnet 패키지)
+
+```{r lasso, eval=FALSE}
+library(glmnet) 
+
+# 독립변수 X 행렬 생성 (Intercept 제거)
+X <- model.matrix(lwage ~ educ + exper + I(exper^2) + tenure + married + female + nonwhite, data = wage1)[, -1] 
+y <- wage1$lwage
+
+# Lasso Fit
+lasso_fit <- glmnet(X, y, alpha=1) 
+
+# 교차 검증을 통해 최적 람다(Lambda) 찾기 
+set.seed(123) 
+cv_lasso <- cv.glmnet(X, y, alpha=1) 
+best_lambda <- cv_lasso$lambda.min 
+
+# 최적 람다 모델 확인 
+lasso_best <- glmnet(X, y, alpha=1, lambda=best_lambda) 
+coef(lasso_best) 
+
+```
+
+## 실습 2 (계속): LASSO 계수 경로 시각화
+
+```{r lasso_plot, eval=FALSE}
+# 패널티 강도(lambda) 변화에 따른 계수 경로(Path) 시각화
+plot(lasso_fit, xvar = "lambda", label = TRUE, main="LASSO Coefficients Path") 
+
+```
+
+## 모형 비교와 실증 경제학적 시사점
+
+임금에 영향을 미치는 핵심 변수를 탐색하기 위해 다양한 모형을 적합하여 비교해 볼 수 있다.
+
+```{r compare, eval=FALSE}
+model1 <- lm(lwage ~ educ + exper + married, data = wage1) 
+model2 <- lm(lwage ~ educ + exper + I(exper^2) + married + female, data = wage1) 
+model3 <- lm(lwage ~ educ + exper + I(exper^2) + married + female + nonwhite + tenure, data = wage1) 
+
+```
+
+* **변수 유의성 평가**: Female, Married, Education 등은 일관되게 유의미한 반면, Black, Tenure는 데이터에 따라 유의성이 낮을 수 있다.
+* **결론적 시사점**: 모델 해석과 정보 기준을 함께 참고해야 한다. 단계적 선택에서 AIC 기준으로 설명력이 좋으면서도 불필요한 변수를 줄인 모형을 선정하되, AIC나 p-value에만 의존하지 말고 경제학 이론적 타당성도 고려해야 한다. 경제학 이론상 중요한 변수일지라도 통계적으로 유의하지 않다면 재고려가 가능하다. 이를 통해 교육·경력·결혼 여부 등이 임금에 미치는 영향을 좀 더 명확히 파악할 수 있다.
+

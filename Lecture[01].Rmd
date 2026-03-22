@@ -1,0 +1,441 @@
+---
+title: "계량경제학 세미나: 연구보고서 작성과 데이터 분석 실습"
+author: "경제학과 김현학 교수"
+institute: "국민대학교 경제학과"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+# 1. 수업 개요
+
+## 1.1 연구보고서란?
+
+* **관심있는 주제의 선정**: 왜 해당 주제에 관심을 가지는가?
+* **분석 데이터**: 해당 주제를 분석할 데이터가 입수 가능한가?
+* **분석 역량**: 해당 주제를 분석할 능력이 되는가?
+* **시사점 있는 결론**: 연구의 결과로 얻을 수 있는 시사점은 무엇인가?
+
+## 1.2 수업계획표
+
+| 주 | 주제 | 주요 사항 |
+| --- | --- | --- |
+| 1 | 경제학 보고서의 작성법, 데이터 수집 기초 |  |
+| 2 | 데이터 시각화 | 조 편성 완료 |
+| 3 | 선형회귀모형 복습, 다중선형 회귀모형 복습 | 연구계획서 제출 (3.20) |
+| 4 | 비선형 모형 복습 |  |
+| 5 | 연구계획서 피드백 (조별) |  |
+| 6 | 이산형 종속변수 모형 복습 |  |
+| 7 | 도구변수 모형 복습 |  |
+| 8 | 시계열 분석 기초 |  |
+| 9 | 시계열 분석 응용 |  |
+| 10 | 시계열 분석 실습 | 중간보고서 제출 (5.15) |
+| 11 | 조별 피드백 |  |
+| 12 | 조별 피드백 | 발표자료 제출 (5.29) |
+| 13 | 보고서 발표 (조별) | 조별 발표 (6.1, 6.3) |
+| 14 | 조별 피드백 |  |
+| 15 | 조별 피드백 | 최종보고서 제출 (6.17) |
+
+---
+
+# 2. 계량방법론을 사용한 연구보고서
+
+계량경제학적 방법론을 활용한 경제 보고서는 경제 현상을 정량적으로 분석하고, 통계적 및 수학적 기법을 적용하여 경제적 관계를 도출하는 보고서를 의미한다. 이러한 보고서는 **실증 분석(Empirical Analysis)**을 기반으로 경제현상 분석, 경제 정책 평가, 시장 동향 예측, 금융 및 거시경제 변수 간 관계 분석 등을 수행한다.
+
+* **정량적 분석 기반**: 통계 및 계량경제 기법을 적용하여 객관적인 근거를 제시. 단순한 서술형 분석이 아닌, 데이터를 활용한 수리적 접근을 의미한다.
+* **경제 이론과 실증 데이터 결합**: 경제이론(거시·미시경제학)에 기반하여 가설을 설정하고 이를 실증적으로 검증한다 (예: 소비함수, 생산함수, 필립스 곡선 등 경제모형을 실측 데이터와 비교).
+
+## 2.1 계량경제학적 방법론 적용
+
+* **회귀분석** (OLS, GLS, IV 등): 경제 변수 간 관계 분석
+* **시계열 분석** (ARIMA, VAR, GARCH 등): 경기 예측 및 금융시장 분석
+* **패널데이터 분석** (Fixed Effects, Random Effects 등): 국가별·산업별 비교 연구
+* **머신러닝 및 빅데이터 활용**: 최근 AI 기반 경제 분석 확대
+* **경제 정책 평가 및 시뮬레이션 가능**: 예) 정부의 재정지출이 경제성장률에 미치는 영향을 계량모형으로 분석, 예측모형을 통해 향후 경제 전망을 수량적으로 제공.
+
+## 2.2 사례주제 및 계량기법
+
+## 미시경제학 분야(횡단면 혹은 패널 자료)
+
+### 1) 최저임금 인상이 청년고용(또는 단시간근로) 비중에 미친 영향
+
+* **연구질문**: 최저임금 인상 이후, 최저임금 영향이 큰 지역/산업에서 청년고용이 더 감소했나?
+* **필요 데이터(공개)**
+
+  * 지역(시도/시군구)×연도(또는 분기/월) 고용지표: KOSIS(경제활동인구/고용률/실업률 등)
+  * 산업구조(저임금 취약 산업 비중 대리변수): KOSIS 사업체/종사자(산업별 종사자 비중)
+  * 최저임금(연도별): 고용노동부 공개자료
+* **방법론**: **강도(intensity) 기반 DID / 패널 고정효과**
+\[
+y_{it}=\alpha_i+\gamma_t+\beta(\text{Post}_t\times \text{Exposure}_i)+\varepsilon_{it}
+\]
+  * $y_{it}$: 청년고용률/청년취업자수 비중 등
+  * $\text{Exposure}_i$: “저임금 취약 업종 비중” 같은 지역 고정 특성(대리변수)
+  * 체크: 사전추세(평행추세), 대체 지표(청년/전체, 제조/서비스)
+
+---
+
+### 2) 지하철역(또는 GTX/경전철) 개통이 주변 주택가격·거래량에 미친 영향
+
+* **연구질문**: 역 개통이 반경 500m~1km 내 아파트 가격과 거래량을 얼마나 바꿨나?
+* **필요 데이터(공개)**
+
+  * 아파트 실거래가(개별 거래) + 거래일: 국토교통부 실거래가 공개
+  * 역 개통일/노선(공개 보도자료/지자체 자료), 좌표(공공데이터/지도 좌표)
+* **방법론**: **DID + 이벤트스터디**
+  \[
+  \ln P_{jt}=\alpha_j+\gamma_t+\sum_{k\neq-1}\beta_k\mathbf{1}[t-T_j=k]+\varepsilon_{jt}
+  \]
+
+  * $j$: 단지(또는 동), $T_j$: 개통 시점(처리 시작)
+  * 체크: 반경 정의 변경(500m/1km), 개통 전 추세 확인
+
+---
+
+### 3) 규제지역 지정(조정대상지역/투기과열지구)이 주택가격 상승률·거래량을 억제했나?
+
+* **연구질문**: 특정 구(區)가 규제지역으로 지정된 뒤 가격상승률/거래량이 비지정 지역 대비 꺾였나?
+* **필요 데이터(공개)**
+
+  * 지역×월 주택가격지수: 한국부동산원(주택가격동향) 공개
+  * 거래량: 국토교통부 실거래(월별 건수 집계 가능)
+  * 규제지역 지정/해제 날짜와 대상 지역: 정부/국토부 공지(공개)
+* **방법론**: **지역-시간 패널 DID**
+  \[
+  y_{it}=\alpha_i+\gamma_t+\beta(\text{RegArea}_{it})+X'_{it}\delta+\varepsilon_{it}
+  \]
+
+  * 체크: 다른 부동산 정책 동시 발생 통제(가능하면 더미), 인접지역 spillover 논의
+
+---
+
+### 4) 무인단속카메라(또는 스쿨존 정책 강화)가 교통사고(특히 어린이 사고)를 줄였나?
+
+* **연구질문**: 카메라 설치(또는 스쿨존 강화) 전후로 주변 사고 건수/중상자 수가 감소했나?
+* **필요 데이터(공개)**
+
+  * 사고 위치/일자/유형: 도로교통공단(TAAS) 또는 공공데이터포털 교통사고 데이터(공개 범위 내)
+  * 카메라/스쿨존 위치·설치시점: 공공데이터포털(지자체/경찰청 제공 데이터가 있는 경우 활용)
+* **방법론**: **설치 전후 DID** 또는 (가능하면) **공간적 RD(거리 기준)**
+
+  * DID(예: 300m 이내 vs 300m~800m)
+  * 체크: 계절/요일 고정효과, 설치 전 추세
+
+---
+
+### 5) 미세먼지(고농도) 발생이 따릉이/대중교통 이용을 얼마나 바꾸나?
+
+* **연구질문**: PM2.5 상승(또는 ‘비상저감조치’ 발령)이 야외 이동(자전거)이나 지하철 이용을 줄이나?
+* **필요 데이터(공개)**
+
+  * 시간/일 단위 PM2.5, 경보/발령: 에어코리아(환경부) 공개
+  * 따릉이 대여량(일/시간/대여소): 서울 열린데이터 광장
+  * (선택) 지하철 승하차: 서울교통공사/지자체 공개(일·역 단위)
+* **방법론**: **고정효과 패널 + 기상통제**
+  \[
+  y_{st}=\alpha_s+\gamma_t+\beta,PM_{t}+ \theta'W_t+\varepsilon_{st}
+  \]
+
+  * $s$: 대여소/역, $W_t$: 기온·강수·풍속 등(기상청 공개)
+  * 체크: 비선형(임계치 효과: $PM>\tau)$, 요일/휴일 더미
+
+---
+
+### 6) 폭염·한파가 전력수요(또는 SMP)에 미치는 영향
+
+* **연구질문**: 기온 충격이 전력수요를 얼마나 밀어 올리고, 도매전력가격(SMP)에 반영되나?
+* **필요 데이터(공개)**
+
+  * 지역(또는 전국) 전력수요/부하: 전력거래소(KPX) 공개 범위 자료
+  * SMP(계통한계가격) 또는 전력시장 가격: KPX 공개자료
+  * 기온/습도: 기상청 공개
+* **방법론**: **분산지연모형(DL) / 패널 FE**
+  \[
+  y_t=\alpha+\sum_{j=0}^{p}\beta_j,Temp_{t-j}+ \theta'Z_t+\varepsilon_t
+  \]
+
+  * 체크: 계절성(월/주 더미), 주중효과, 냉난방도지수(CDD/HDD)로 대체
+
+---
+
+### 7) KTX/SRT 개통(또는 정차역 추가)이 지역 관광·상권(사업체수)에 미친 영향
+
+* **연구질문**: 고속철 접근성 개선이 지역 방문객/숙박/사업체(음식·숙박업) 증가로 이어졌나?
+* **필요 데이터(공개)**
+
+  * 지역 관광지표(방문객, 숙박 등): 한국관광공사 관광통계(공개 범위)
+  * 사업체수/종사자(음식·숙박 등): KOSIS 사업체조사(지역×연도)
+  * 개통/정차 변경 시점: 코레일/국토부 공개자료
+* **방법론**: **DID / 이벤트스터디**
+  \[
+  y_{it}=\alpha_i+\gamma_t+\sum_{k}\beta_k(\text{Treat}_i\times \mathbf{1}[t=k])+\varepsilon_{it}
+  \[
+
+  * 체크: 유사 지역 매칭(사전 수준/추세가 비슷한 통제지역 선정)
+
+---
+
+## 거시경제학 분야(시계열 분석 필요)
+
+### 8) 기준금리 충격이 물가·산출에 미치는 동태 효과(VAR)
+
+* **연구질문**: 금리 인상이 CPI/산업생산/환율에 어떤 경로로, 몇 개월에 걸쳐 영향을 주나?
+* **필요 데이터(공개)**: ECOS(정책금리, CPI, 산업생산, 실업률, 환율 등 월별)
+* **방법론**: **VAR + 충격반응(IRF)**
+  \[
+  Y_t=c+\sum_{j=1}^{p}A_jY_{t-j}+u_t
+  \]
+
+   * $Y_t$: (금리, CPI, 생산, 환율 등) 벡터 시계열
+   * IRF로 금리 충격이 다른 변수에 미치는 동태적 효과 분석
+
+  * 체크: 시차선택(AIC/BIC), 표본구간(위기 전후) 민감도
+
+---
+
+### 9) 환율 변동의 물가 전가(수입물가→소비자물가) 추정
+
+* **연구질문**: 환율 상승이 수입물가와 CPI에 얼마나, 얼마나 빨리 전가되나?
+* **필요 데이터(공개)**: ECOS(원/달러 환율, 수입물가지수, CPI, 유가/원자재가격 등)
+* **방법론**: **ARDL 또는 분산지연(DL)**
+  \[
+  \Delta \pi_t=\alpha+\sum_{j=0}^{p}\beta_j\Delta e_{t-j}+\sum_{j=1}^{q}\phi_j\Delta \pi_{t-j}+\varepsilon_t
+  \]
+
+  * 체크: 물가 국면별(고물가/저물가) 표본 분할, 유가 통제
+
+---
+
+### 10) 장단기 금리차(수익률곡선)가 향후 경기둔화를 예측하는가?
+
+* **연구질문**: 장단기 금리차가 (h)개월 뒤 산업생산 증가율(또는 경기침체 더미)을 예측하나?
+* **필요 데이터(공개)**
+
+  * ECOS(국채금리 10년/3개월 또는 2년 등), 산업생산(또는 GDP/경기종합지수)
+* **방법론**: **예측회귀 / (선택) 프로빗**
+  \[
+  g_{t+h}=\alpha+\beta,\text{Spread}_t+\varepsilon_{t+h},\quad \text{Spread}_t=y^{10y}_t-y^{3m}_t
+  \]
+  \[
+  \Pr(\text{Downturn}_{t+h}=1)=\Phi(\alpha+\beta,\text{Spread}_t)
+  \]
+
+   * $g_{t+h}$: 산업생산 증가율, $\text{Downturn}_{t+h}$: 경기침체 여부(예: 생산 증가율이 음수인 경우)
+   * $\text{Spread}_t$: 장단기 금리차(수익률곡선의 기울기)
+
+  * 체크: 예측기간 $h$ 변경(3/6/12개월), 표본구간 민감도
+
+---
+
+# 3. 연구계획서 (3.20(금) 제출)
+
+1. **연구제목**: 연구제목이 중간, 최종보고서와 동일하지 않아도 되나 후술할 연구내용과는 관련이 있게 작성.
+2. **팀원 이름**: 팀명은 필수 아님.
+3. **연구동기**: 관련된 이슈들의 현재 상태 혹은 상황에 대해서 간단히 설명하고, 어떠한 이슈들에 대해서 팀원들이 관심을 갖게 되었고, 왜 그런 관심이 생겼는지를 앞에 언급한 이슈와 연관지어서 설명한다. (반드시 왜, 그리고 무엇을 연구할지를 명확하게 해야 함)
+4. **기존 연구**: 관심 주제에 대해 이미 연구한 것(신문기사, 논문, 보고서 등) 최소한 3개 이상의 기존연구들을 소개하고, 무엇을 어떻게 연구하고 어떤 결론을 내렸는지 간단히 설명한다.
+5. **연구계획**: 무엇을 어떻게 연구할지를 소개하고, 데이터 목록과 출처를 조사하며, 기존 연구들을 분석하여 이슈들에 대한 제안 혹은 대안을 제시한다.
+6. **예상결론 (정책적 시사점)**: 예상할 수 있는 결론을 1~2문장으로 표현하며, 결론은 금융정책적으로 시사하는 바가 될 수도 있다.
+
+---
+
+# 4. 데이터 분석 및 도구 활용
+
+## 4.1 R vs. Python 비교
+
+| 구분 | R | Python |
+| --- | --- | --- |
+| **주요 특징** | 통계 및 계량경제학 중심 | 데이터 과학 및 머신러닝 중심 |
+| **사용 목적** | 회귀 분석, 시계열 분석, 패널 데이터 분석 | 데이터 처리, 머신러닝, API 활용 |
+| **주요 패키지** | lm(), plm, forecast, ggplot2, sandwich | statsmodels, pandas, scipy, matplotlib, sklearn |
+| **시각화** | ggplot2, plotly 활용 | matplotlib, seaborn, plotly 활용 |
+| **머신러닝** | 상대적으로 약함 | scikit-learn, tensorflow, pytorch 지원 |
+| **데이터 처리** | dplyr, tidyverse | pandas, numpy |
+
+### 예제: OLS 회귀분석 (GDP와 소비 사이의 관계 분석)
+
+```{r r_ols}
+# R 예제
+library(tidyverse)
+data <- data.frame(
+  GDP = c(1000, 2000, 3000, 4000, 5000),
+  Consumption = c(600, 1200, 1800, 2500, 3100)
+)
+model <- lm(Consumption ~ GDP, data = data)
+summary(model)
+
+```
+
+```{python py_ols, eval=FALSE, python.reticulate=FALSE}
+# Python 예제
+import pandas as pd
+import statsmodels.api as sm
+
+data = pd.DataFrame({
+    'GDP': [1000, 2000, 3000, 4000, 5000],
+    'Consumption': [600, 1200, 1800, 2500, 3100]
+})
+X = sm.add_constant(data['GDP'])
+y = data['Consumption']
+model = sm.OLS(y, X).fit()
+print(model.summary())
+
+```
+
+## 4.2 AI의 활용
+
+* **연구 주제 선정 및 이론적 배경 정리**: 최신 핵심 이슈 요약 및 경제학 이론 제공 (예: 최저임금 인상이 고용에 미치는 영향에 대한 주요 경제학 이론을 정리해줘)
+* **데이터 수집 및 정리**: 데이터 출처 추천 및 전처리 코드 제공 (예: OECD 국가의 GDP와 실업률 데이터를 불러와 전처리하는 R코드를 제공해줘)
+* **계량경제학적 분석 방법 선택**: 연구 질문에 적합한 계량모형 추천 및 코드 제공 (예: 고정효과 패널 회귀분석을 위한 R코드 제공해줘)
+* **모델 실행 및 결과 해석**: 계량분석 결과 해석 지원 (예: OLS 회귀분석 결과에서 p-value가 0.05보다 작다면 어떤 의미인가?)
+* **데이터 시각화 및 보고서 작성**: 시각화 코드 제공 및 보고서 템플릿 생성
+* **보고서 작성 및 수정**: 참고문헌 및 출처 자동 정리 (반드시 웹검색해서 확인할 것!)
+
+## 4.3 데이터의 출처
+
+* **국내**: 한국은행 경제통계시스템, 통계청, 한국거래소
+* **국외**: IMF International Financial Statistics, OECD Database, World Bank Statistics, FRED, Thompson-Reuters
+* **기타**: 설문조사 or 실험
+
+---
+
+# 5. API를 이용한 데이터 추출 및 시각화
+
+## 5.1 한국은행 API 데이터 추출 사례
+
+```{r bok_api, eval=FALSE}
+# 필요한 패키지 설치 및 등록
+library(httr)
+library(jsonlite)
+library(sqldf)
+
+# 기본 요소 입력
+url_base <- "[http://ecos.bok.or.kr/api/StatisticSearch](http://ecos.bok.or.kr/api/StatisticSearch)"
+id <- "abcdefghijk12345" # 실제 인증키로 교체
+요청유형 <- "json"
+언어구분 <- "kr"
+요청시작건수 <- "1"
+요청종료건수 <- "1000"
+통계표코드 <- "200Y108"
+주기 <- "Q"
+검색시작일자 <- "2000Q1"
+검색종료일자 <- "2024Q4"
+통계항목코드1 <- "10601"
+
+# 데이터 추출
+url <- paste(url_base, id, 요청유형, 언어구분, 요청시작건수, 요청종료건수, 통계표코드, 주기, 검색시작일자, 검색종료일자, 통계항목코드1, sep="/")
+api_result <- GET(url)
+result <- rawToChar(api_result$content)
+Encoding(result) <- "UTF-8"
+result_json_parsing <- fromJSON(result)
+
+# 데이터를 데이터프레임으로 적재
+output_dataframe <- as.data.frame(result_json_parsing)
+GDPdata <- output_dataframe[, c(14,15)]
+colnames(GDPdata) <- c("Quarter", "GDP_level")
+
+# 데이터 전처리
+library(zoo)
+GDPdata$Quarter <- as.yearqtr(GDPdata$Quarter, format = "%YQ%q")
+GDPdata$GDP_level <- as.numeric(GDPdata$GDP_level)
+GDPdata$growth <- c(rep(NA, 4), diff(log(GDPdata$GDP_level), lag = 4) * 100)
+
+# Plot 작성
+ggplot(data=GDPdata, aes(x=Quarter, y=growth, group=1)) +
+  geom_line(color="blue") +
+  labs(
+    title="분기별 실질 GDP 성장률",
+    x="분기",
+    y="성장률(%)"
+  ) +
+  theme_minimal()
+
+```
+
+## 5.2 데이터 시각화 기초 및 응용
+
+### (1) 기본 그래프 그리기
+
+```{r base_plots, eval=FALSE}
+# 기본적인 산점도
+x <- 1:10
+y <- x^2
+plot(x, y, type='b', col='blue', pch=19, main='기본 산점도')
+
+# 막대그래프
+heights <- c(150, 160, 170, 180, 190)
+barplot(heights, names.arg=c('A', 'B', 'C', 'D', 'E'), col='lightblue', main='키 분포')
+
+# 히스토그램
+set.seed(123)
+data <- rnorm(1000, mean=50, sd=10)
+hist(data, col='lightgreen', breaks=20, main='정규분포 데이터의 히스토그램')
+
+# 상자그림(Boxplot)
+boxplot(data, col='pink', main='데이터 분포')
+
+```
+
+### (2) ggplot2를 활용한 시각화
+
+```{r ggplot2_plots, eval=FALSE}
+# library 및 데이터 준비
+library(ggplot2)
+data <- data.frame(
+  category = rep(c('A', 'B', 'C', 'D'), each=10),
+  value = rnorm(40, mean=50, sd=10)
+)
+
+# 산점도
+ggplot(data, aes(x=category, y=value)) +
+  geom_point(color='blue', size=3) +
+  theme_minimal() +
+  ggtitle('카테고리별 값 분포')
+
+# 선 그래프
+set.seed(123)
+time_series <- data.frame(time = 1:100, value = cumsum(rnorm(100)))
+ggplot(time_series, aes(x=time, y=value)) +
+  geom_line(color='red', size=1) +
+  theme_minimal() +
+  ggtitle('시간에 따른 값 변화')
+
+# 시계열 그래프
+set.seed(123)
+time_series2 <- data.frame(
+  date = seq(as.Date("2020-01-01"), by="month", length.out=24),
+  value = cumsum(rnorm(24))
+)
+ggplot(time_series2, aes(x=date, y=value)) +
+  geom_line(color='blue', size=1) +
+  theme_minimal() +
+  labs(title='월별 시계열 데이터', x='날짜', y='값')
+
+# 막대 그래프
+ggplot(data, aes(x=category, y=value, fill=category)) +
+  geom_bar(stat='identity') +
+  theme_minimal() +
+  ggtitle('카테고리별 평균 값')
+
+# 히트맵
+library(reshape2)
+matrix_data <- matrix(rnorm(100), nrow=10)
+heatmap(matrix_data, col=heat.colors(20), main='히트맵 예제')
+
+# Box Plot
+set.seed(123)
+boxplot_data <- data.frame(
+  category = rep(c('A', 'B', 'C', 'D'), each=10),
+  value = rnorm(40, mean=50, sd=10)
+)
+ggplot(boxplot_data, aes(x=category, y=value, fill=category)) +
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle('카테고리별 박스플롯')
+
+```

@@ -1,0 +1,334 @@
+---
+title: "계량경제학 세미나: 데이터 시각화"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output: 
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    transition: faster
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = 'center')
+
+```
+
+# 1. 데이터 시각화의 개요
+
+## 시각화의 중요성
+
+성공적인 계량경제학 분석은 철저한 데이터 탐색에서 시작된다.
+
+* **통계 분석 전 탐색 (EDA: Exploratory Data Analysis)**
+* **데이터의 특징 파악**: 이상치(Outlier), 분포 형태, 변수 간의 비선형적 관계를 파악한다.
+* **결과 해석 및 전달력 향상**: 복잡한 회귀분석 결과를 직관적으로 이해시키기 위해 필수적이다.
+
+**주요 R 패키지**
+
+* `ggplot2`: 그래프 작성용 (Grammar of Graphics 문법 체계 적용)
+* `dplyr`, `tidyr`: 데이터 전처리 및 구조 변환
+* `lubridate`: 날짜/시간 처리
+* `quantmod` / `tseries` / `plm`: 금융 시계열 및 패널 데이터 분석 패키지
+
+# 2. 데이터 구조별 시각화 기법
+
+## 횡단면 데이터 (Cross-Sectional Data) 시각화
+
+동일한 시간, 동일한 기간에 여러 변수에 대하여 수집된 자료이다. 개별 가구, 개인, 기업에 대한 단일 시점 자료를 의미한다.
+
+* **특징**: 히스토그램, 박스플롯, 산점도 등을 통해 자료의 분포와 인과관계/상관관계를 빠르게 탐색할 수 있다.
+* **예제**: `wooldridge` 패키지의 `wage1` 데이터.
+
+```{r cross_sectional, eval=FALSE}
+library(wooldridge); library(ggplot2); library(dplyr)
+data("wage1")
+
+# 교육연수(educ)에 따른 임금(wage) 산점도 및 선형 추세선
+ggplot(wage1, aes(x = educ, y = wage)) +
+  geom_point(color="blue", alpha = 0.6) +
+  labs(title="교육연수와 임금", x="교육연수", y="임금") +
+  geom_smooth(method = "lm", color = "red", se = FALSE) # 회귀 추세선 추가
+
+```
+
+## 다중공선성 사전 진단 (상관관계 매트릭스)
+
+다중회귀분석 전, 독립변수들 간의 강한 상관관계를 확인하여 다중공선성(Multicollinearity) 문제를 방지해야 한다. `ggcorrplot`을 사용하면 매우 직관적인 히트맵을 그릴 수 있다.
+
+```{r corr_matrix, eval=FALSE}
+# install.packages("ggcorrplot")
+library(ggcorrplot)
+
+# 연속형 변수만 선택하여 상관계수 행렬 계산
+cor_matrix <- cor(wage1 %>% select(wage, educ, exper, tenure))
+
+# 상관계수 히트맵 시각화
+ggcorrplot(cor_matrix, 
+           method = "square", 
+           type = "lower", 
+           lab = TRUE,          # 상관계수 수치 표시
+           colors = c("blue", "white", "red"),
+           title = "주요 변수 간 상관관계 히트맵")
+
+```
+
+## 패널 데이터 (Panel Data) 시각화
+
+패널 데이터는 여러 개체(기업, 개인 등)에 대해 여러 시점의 데이터가 존재하는 구조이다.
+
+* **특징**: 개체 간, 시점 간 변화 추이를 동시에 파악할 수 있다.
+* **시각화 방법**: 기업별 시계열을 겹쳐 표현하는 선 그래프(Line plot)를 그리거나, `facet_wrap` 기능을 사용해 개체별로 패널을 나누어 표현한다.
+
+```{r panel_data, eval=FALSE}
+library(plm)
+data("Grunfeld", package = "plm") # Grunfeld 패널 데이터
+
+# 연도에 따른 투자 추이를 기업별로 색상을 다르게 하여 그리기
+ggplot(Grunfeld, aes(x = year, y = invest, color = as.factor(firm))) +
+  geom_line() + 
+  labs(title = "Grunfeld 패널 데이터: 기업별 투자 추이", x = "연도", y = "투자액", color = "기업 ID") +
+  theme_minimal()
+
+```
+
+## 이중차분법(DID) - 평행추세(Parallel Trends) 시각화
+
+정책 평가 등 인과추론(Causal Inference)을 위한 이중차분법(DID) 모형에서는 처치군과 통제군이 정책 도입 이전(Pre-treatment)에 동일한 추세를 보인다는 **평행추세 가정**을 시각적으로 보여주는 것이 핵심이다.
+
+```{r parallel_trends, eval=FALSE}
+# 가상의 DID 패널 데이터 시각화 예시
+ggplot(did_data, aes(x = year, y = outcome, color = group, group = group)) +
+  stat_summary(fun = mean, geom = "line", size = 1.5) + # 그룹별 평균 선
+  geom_vline(xintercept = 2015, linetype = "dashed", color = "black") + # 정책 도입 시점
+  annotate("text", x = 2015.5, y = max(did_data$outcome), label = "정책 도입", hjust = 0) +
+  labs(title = "이중차분법(DID) 평행추세 검토", x = "연도", y = "결과 변수") +
+  theme_minimal()
+
+```
+
+## 시계열 데이터 (Time Series) 시각화
+
+한 사건 또는 여러 사건에 대하여 시간의 흐름에 따라 일정한 간격으로 관찰하여 기록한 자료이다. FRED(Federal Reserve Economic Data)에서 거시경제 지표 등을 가져올 수 있다.
+
+* **특징**: 추세, 계절성, 사이클 등을 파악하는 데 유리한다.
+
+```{r time_series, eval=FALSE}
+# install.packages("fredr")
+library(fredr)
+fredr_set_key("본인_API_KEY") # 개인 발급 키 입력
+
+# 미국의 분기별 GDP 데이터 불러오기
+gdp_data <- fredr(series_id = "GDP", observation_start = as.Date("2000-01-01"))
+
+ggplot(gdp_data, aes(x = date, y = value)) +
+  geom_line(color = "blue") +
+  labs(title = "미국 분기별 GDP", x = "날짜", y = "GDP") +
+  theme_minimal()
+
+```
+
+## 범주형 자료 시각화 및 이진 분류 경계선
+
+종속변수가 0과 1 (예: 채무불이행 vs 정상)인 이진 분류(Binary Classification) 문제의 시각화이다. 산점도와 색상을 통해 그룹 간 분포를 직관적으로 파악한다.
+
+```{r binary_class, eval=FALSE}
+# 2개의 종(setosa, versicolor)만 추출하여 이진 분류로 활용
+df_iris <- iris %>% filter(Species %in% c("setosa", "versicolor")) %>% mutate(Species = factor(Species))
+
+# 로지스틱 회귀 모델 적합 (분류선 작성을 위함)
+model_logit <- glm(Species ~ Sepal.Length + Sepal.Width, data = df_iris, family = binomial)
+
+ggplot(df_iris, aes(x = Sepal.Length, y = Sepal.Width, color = Species)) +
+  geom_point(size = 3, alpha = 0.7) +
+  labs(title = "Iris 데이터 이진 분류 및 로지스틱 경계", x = "Sepal.Length", y = "Sepal.Width") +
+  # 이 위에 predict된 확률값을 바탕으로 stat_contour 등을 사용하여 경계선을 추가할 수 있다.
+  theme_minimal()
+
+```
+
+## 지도 데이터 시각화 (Spatial Data)
+
+`sf` 패키지를 활용하여 지역별 경제 지표(예: 시도별 지가상승률)를 지도 위에 Choropleth Map 형태로 시각화한다. 한국은행 ECOS API를 결합하여 실증 데이터를 활용할 수 있다.
+
+```{r spatial_data, eval=FALSE}
+library(sf); library(ggplot2); library(dplyr)
+
+# (사전 처리: ECOS 데이터 추출 후 region_map과 결합 과정 생략) 
+# map_land 객체에 지도 폴리곤과 지가상승률(land_rate)이 병합되었다고 가정
+
+ggplot(map_land) +
+  geom_sf(aes(fill = land_rate), color = "black") +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "2024년 12월 시도별 지가상승률") +
+  theme_void()
+
+```
+
+## 회귀모형 진단(Diagnostic) 플롯 시각화
+
+선형회귀모형을 추정한 후, 모형의 가정이 잘 지켜졌는지 잔차(Residual) 분석을 통해 검증해야 한다. `ggfortify` 패키지의 `autoplot()`을 사용하면 `ggplot2` 스타일의 깔끔한 진단 그래프 4종(선형성, 정규성, 등분산성, 이상치)을 한 번에 그릴 수 있다.
+
+```{r diagnostic_plot, eval=FALSE}
+# install.packages("ggfortify")
+library(ggfortify)
+
+# 단순 선형 회귀 모형 적합
+model <- lm(wage ~ educ + exper, data = wage1)
+
+# 회귀 진단 4종 플롯 시각화 (Residuals vs Fitted, Q-Q Plot, Scale-Location, Residuals vs Leverage)
+autoplot(model, 
+         which = 1:4, 
+         colour = 'steelblue', 
+         smooth.colour = 'red') + 
+  theme_bw()
+
+```
+
+
+# ggplot2의 활용
+
+## Grammar of Graphics: 그래프의 문법
+
+경제학 실증분석 보고서에서 그래프는 단순한 그림이 아니라, **데이터의 인과관계와 패턴을 증명하는 강력한 언어**이다.
+
+`ggplot2`는 데이터를 층(Layer)으로 쌓아 올리는 방식을 사용한다.
+
+* **Data**: 분석할 데이터 프레임 (`ggplot(data, aes(x, y))`)
+* **Geometries (geom)**: 시각적 형태 (점, 선, 막대 등)
+* **Facets**: 하위 그룹별 그래프 분할
+* **Themes**: 보고서용 깔끔한 디자인(배경, 폰트, 범례) 조정
+
+이 튜토리얼에서는 실증분석의 5단계 흐름에 맞춰 `ggplot2`를 학습한다.
+
+# 실증분석 1단계: 종속변수의 분포 확인 (EDA)
+
+## 밀도 함수(Density Plot)와 로그 변환
+
+임금(wage)과 같은 경제 데이터는 대개 오른쪽으로 긴 꼬리를 가진다(Right-skewed). OLS의 정규성 가정을 만족시키기 위해 로그 변환을 적용하는 논리를 시각적으로 증명해 보자.
+
+```{r density_plot, eval=FALSE}
+library(wooldridge); library(tidyverse)
+data("wage1")
+
+# 원본 임금 vs 로그 임금의 분포 비교
+p1 <- ggplot(wage1, aes(x = wage)) +
+  geom_density(fill = "steelblue", alpha = 0.5) +
+  labs(title = "원본 임금(Wage)의 분포", x = "Hourly Wage") + theme_minimal()
+
+p2 <- ggplot(wage1, aes(x = lwage)) +
+  geom_density(fill = "darkred", alpha = 0.5) +
+  labs(title = "로그 임금(Log Wage)의 분포", x = "Log Hourly Wage") + theme_minimal()
+
+# gridExtra 패키지로 두 그래프 나란히 배치 (보고서 작성 시 유용)
+# library(gridExtra); grid.arrange(p1, p2, ncol = 2)
+
+```
+
+* **보고서 작성 Tip**: "임금 분포의 비대칭성을 완화하기 위해 종속변수에 자연로그를 취하여 정규성을 확보하였다"는 문장과 함께 위 그래프를 제시할 수 있다.
+
+# 실증분석 2단계: 변수 간 관계와 회귀선 추정
+
+## 산점도와 비선형(Non-linear) 추세선
+
+교육연수(educ)와 임금(wage)의 관계를 확인한다. 선형(Linear) 모형이 적합한지, 혹은 비선형 모형이 필요한지 `geom_smooth()`를 통해 탐색한다
+
+```{r scatter_smooth, eval=FALSE}
+ggplot(wage1, aes(x = educ, y = lwage)) +
+  geom_point(alpha = 0.4, color = "grey50") + # 관측치 투명도 조절로 겹침 방지
+  geom_smooth(method = "lm", color = "blue", se = TRUE) + # 선형 OLS 추세선 (파란색)
+  geom_smooth(method = "loess", color = "red", linetype = "dashed", se = FALSE) + # 국소 회귀선 (빨간 점선)
+  labs(title = "교육연수와 로그 임금의 관계", 
+       subtitle = "파란선: 선형(OLS), 빨간 점선: 비선형(LOESS)",
+       x = "교육연수 (년)", y = "Log(Wage)") +
+  theme_bw() # 보고서용 깔끔한 배경
+
+```
+
+* **보고서 작성 Tip**: LOESS 추세선(빨간 점선)이 파란색 직선(OLS)과 크게 다르지 않다면, "교육연수와 임금 간의 관계를 선형으로 가정하는 것이 타당하다"고 서술할 수 있다.
+
+# 실증분석 3단계: 그룹 간 이질성 분석 (Heterogeneity)
+
+## Facet과 Boxplot을 활용한 그룹 비교
+
+성별(female)과 결혼 여부(married)에 따라 임금 구조가 어떻게 다른지 한눈에 비교하고, 하위 그룹 분석(Sub-sample analysis)의 정당성을 부여한다.
+
+```{r boxplot_facet, eval=FALSE}
+# 변수를 팩터형(문자형)으로 변환하여 라벨링
+wage1_mod <- wage1 %>%
+  mutate(Gender = ifelse(female == 1, "Female", "Male"),
+         Marital = ifelse(married == 1, "Married", "Single"))
+
+ggplot(wage1_mod, aes(x = Gender, y = lwage, fill = Gender)) +
+  geom_boxplot(outlier.color = "red", alpha = 0.7) +
+  facet_wrap(~ Marital) + # 결혼 여부에 따라 패널(그래프) 분할
+  labs(title = "성별 및 결혼 여부에 따른 임금 격차", x = "", y = "Log(Wage)") +
+  scale_fill_manual(values = c("Female" = "orange", "Male" = "steelblue")) +
+  theme_bw() +
+  theme(legend.position = "none") # 범례 숨기기
+
+```
+
+# 실증분석 4단계: 인과추론 (이중차분법 평행추세)
+
+## DID 평행추세(Parallel Trends) 시각화
+
+4학년 실증보고서에서 가장 많이 쓰이는 이중차분법(DID) 모형의 핵심은 **"정책 도입 이전(Pre-treatment) 두 그룹의 추세가 같았는가?"**를 증명하는 것이다.
+
+```{r did_plot, eval=FALSE}
+# 가상의 DID 패널 데이터 생성
+set.seed(42)
+did_data <- data.frame(
+  Year = rep(2010:2020, 2),
+  Group = rep(c("Treatment", "Control"), each = 11),
+  Outcome = c(seq(10, 20), seq(12, 22)) + rnorm(22, 0, 0.5)
+)
+did_data$Outcome[did_data$Year >= 2016 & did_data$Group == "Treatment"] <- 
+  did_data$Outcome[did_data$Year >= 2016 & did_data$Group == "Treatment"] + 5 # 정책 효과
+
+# 평행추세 시각화
+ggplot(did_data, aes(x = Year, y = Outcome, color = Group, linetype = Group)) +
+  geom_line(size = 1.2) + geom_point(size = 3) +
+  geom_vline(xintercept = 2015.5, color = "black", linetype = "dashed", size = 1) + # 정책 도입 시점
+  annotate("text", x = 2015.8, y = max(did_data$Outcome), label = "Policy Intervention", hjust = 0, fontface = "bold") +
+  labs(title = "이중차분법(DID): 평행추세 및 정책 효과 확인", x = "연도", y = "관심 변수") +
+  theme_classic() + theme(legend.position = "bottom")
+
+```
+
+# 실증분석 5단계: 학술 보고서용 포맷팅 (Exporting)
+
+## 논문에 바로 들어갈 수 있는 그래프 만들기
+
+기본 회색 배경 그래프는 학술 보고서나 논문에 적합하지 않다. 흑백 인쇄 시에도 구분이 가도록 다듬고 고해상도로 저장하도록 한다
+
+```{r theme_export, eval=FALSE}
+# 최종 그래프 객체 저장
+final_plot <- ggplot(wage1, aes(x = educ, y = lwage, color = as.factor(female))) +
+  geom_point(alpha = 0.5) + geom_smooth(method = "lm", se = F) +
+  scale_color_manual(labels = c("Male", "Female"), values = c("blue", "red")) +
+  labs(title = "Education and Wage by Gender", x = "Years of Education", y = "Log(Wage)", color = "Gender") +
+  theme_bw() + # 흑백/깔끔한 테마
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5), # 제목 중앙 정렬 및 볼드체
+    legend.position = c(0.85, 0.15), # 범례를 그래프 내부 우측 하단으로 이동
+    legend.background = element_rect(color = "black") # 범례 테두리
+  )
+
+# 고해상도(300 dpi) 이미지로 저장 (워드나 한글 파일 삽입용)
+ggsave("wage_education_plot.png", plot = final_plot, width = 8, height = 6, dpi = 300)
+```
+
+
+## 요약 및 과제 팁
+
+* **데이터 탐색(EDA)** 없이 회귀분석부터 돌리지 말자. `ggplot2`로 아웃라이어와 비선형성을 먼저 확인해야 한다.
+* **인과추론 모형(DID, RDD 등)**을 사용할 경우, 회귀표(Table)보다 시각적 증거(Plot)가 설득하는 데 훨씬 강력하다.
+* 보고서에 그래프를 삽입할 때는 캡션(예: *[그림 1] 교육연수와 임금의 관계*)을 명확히 적고, 본문에서 이 그림이 무엇을 시사하는지 반드시 서술해보자. 
+
+
+### 보충자료
+[Introduction to ggplot2 for Econometrics](https://www.youtube.com/watch?v=XPaB-gj-7Ts)
+이 비디오는 계량경제학 실증 분석을 위한 ggplot2 문법의 기초와 활용법을 직관적으로 설명한다.
+
+
