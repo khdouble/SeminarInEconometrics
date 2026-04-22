@@ -1,0 +1,638 @@
+---
+title: "Card & Krueger (1994) 재현 분석"
+subtitle: "최저임금과 고용: 이중차분법(Difference-in-Differences)을 통한 실증 분석"
+author: "계량경제학 세미나"
+date: "국민대 경제학과 김현학 교수"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    df_print: paged
+    code_folding: show
+    fig_caption: true
+fontsize: 11pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  message = FALSE, 
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 9,
+  fig.height = 5.5,
+  dpi = 100
+)
+
+# 필요한 패키지
+pkgs <- c("tidyverse", "fixest", "modelsummary", "kableExtra", 
+          "broom", "patchwork", "scales")
+new_pkgs <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+if(length(new_pkgs)) install.packages(new_pkgs, repos = "https://cran.r-project.org")
+
+library(tidyverse)     # 데이터 조작 및 시각화
+library(fixest)        # 고정효과 회귀분석
+library(modelsummary)  # 회귀 결과 테이블
+library(kableExtra)    # 테이블 포맷팅
+library(broom)         # 회귀 결과 정리
+library(patchwork)     # ggplot 결합
+library(scales)        # 축 포맷
+
+theme_set(theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", size = 13),
+        plot.subtitle = element_text(color = "grey30"),
+        legend.position = "bottom"))
+```
+
+---
+
+# 논문의 배경과 의의
+
+## 연구의 학문적 맥락
+
+전통적 노동경제학의 경쟁적 노동시장 모형은 **최저임금 상승이 고용을 감소시킨다**는 명확한 예측을 제공한다. 수요·공급 모형에서 최저임금 $w_{\min}$이 균형임금 $w^*$보다 높게 설정되면:
+
+$$
+L^D(w_{\min}) < L^S(w_{\min}) \quad \Rightarrow \quad \text{실업 발생}
+$$
+
+그러나 Card and Krueger(1994, 이하 CK)는 이러한 정통 이론을 정면으로 반박하는 실증 결과를 제시하였다. 1990년대 이전까지 최저임금 효과에 대한 실증연구는 주로 시계열 자료를 활용한 Brown, Gilroy, and Kohen(1982) 류의 연구가 대세였으며, 이들은 일반적으로 **-1% ~ -3%**의 고용 탄력성을 보고하였다.
+
+## 자연 실험(Natural Experiment)의 설계
+
+CK는 다음의 정책 변화를 **자연 실험**으로 활용하였다:
+
+- **처치(Treatment):** 1992년 4월 1일, 뉴저지(NJ)주가 최저임금을 **\$4.25 → \$5.05**로 18.8% 인상
+- **통제(Control):** 인접한 펜실베이니아(PA)주는 최저임금을 연방 기준 \$4.25로 유지
+- **대상 산업:** 4개 패스트푸드 체인(Burger King, KFC, Wendy's, Roy Rogers) 총 410개 매장
+- **조사 시점:** 
+    - Wave 1 (정책 시행 전): 1992년 2~3월
+    - Wave 2 (정책 시행 후): 1992년 11~12월
+
+## 주요 발견과 파급효과
+
+CK의 주요 발견은 다음 세 가지로 요약된다:
+
+1. NJ의 최저임금 인상 이후 NJ 매장들의 고용은 **감소하지 않았다**.
+2. 오히려 NJ 매장의 FTE 고용은 PA 대비 **약 2.76명 증가**하였다.
+3. 최저임금 인상 전 저임금(\$4.25 근처)이었던 매장일수록 고용 증가가 컸다.
+
+이 연구는 이후 Neumark and Wascher(2000)의 행정자료를 이용한 재반박, Dube, Lester, and Reich(2010)의 접경 카운티 쌍 비교 연구 등 광범위한 후속 논쟁을 촉발하였으며, 2021년 Card의 노벨경제학상 수상의 핵심 기여 중 하나로 평가된다.
+
+---
+
+# 이중차분법(DiD)의 기본 개념
+
+## 기본 틀(Framework)
+
+잠재결과(potential outcomes) 표기법을 사용하면, 개별 단위 $i$의 시점 $t$에서의 관측된 결과는:
+
+$$
+Y_{it} = D_{it} \cdot Y_{it}(1) + (1 - D_{it}) \cdot Y_{it}(0)
+$$
+
+여기서 $D_{it}$는 처치 지표, $Y_{it}(1), Y_{it}(0)$는 각각 처치·비처치 시의 잠재결과이다.
+
+**처치군 평균처치효과(ATT)**는:
+
+$$
+\text{ATT} = E[Y_{it}(1) - Y_{it}(0) \mid D_i = 1, \, t = \text{post}]
+$$
+
+문제는 $E[Y_{it}(0) \mid D_i = 1, t = \text{post}]$(처치군의 반사실)을 관측할 수 없다는 점이다.
+
+## DiD 추정량
+
+두 집단(처치군 $T$, 통제군 $C$)과 두 시점(사전 $t=0$, 사후 $t=1$)이 있을 때, DiD 추정량은:
+
+$$
+\hat{\delta}_{\text{DiD}} = \underbrace{\left[\bar{Y}_{T,1} - \bar{Y}_{T,0}\right]}_{\text{처치군 변화}} - \underbrace{\left[\bar{Y}_{C,1} - \bar{Y}_{C,0}\right]}_{\text{통제군 변화}}
+$$
+
+## 회귀식 표현
+
+DiD는 다음의 상호작용 회귀로 추정할 수 있다:
+
+$$
+Y_{it} = \beta_0 + \beta_1 \, \text{Treat}_i + \beta_2 \, \text{Post}_t + \delta \, (\text{Treat}_i \times \text{Post}_t) + \varepsilon_{it}
+$$
+
+각 계수의 해석은:
+
+| 조건 | 기댓값 $E[Y_{it}]$ |
+|:---:|:---|
+| $\text{Treat}=0, \text{Post}=0$ | $\beta_0$ |
+| $\text{Treat}=1, \text{Post}=0$ | $\beta_0 + \beta_1$ |
+| $\text{Treat}=0, \text{Post}=1$ | $\beta_0 + \beta_2$ |
+| $\text{Treat}=1, \text{Post}=1$ | $\beta_0 + \beta_1 + \beta_2 + \delta$ |
+
+따라서 $\delta$가 바로 DiD 추정량이며 ATT에 해당한다.
+
+## 핵심 식별 가정: 평행 추세(Parallel Trends)
+
+DiD의 타당성은 **평행추세 가정**에 결정적으로 의존한다:
+
+$$
+E[Y_{it}(0) - Y_{i,t-1}(0) \mid D_i = 1] = E[Y_{it}(0) - Y_{i,t-1}(0) \mid D_i = 0]
+$$
+
+즉, 처치가 없었을 경우 두 집단의 결과 변수는 **평행하게 움직였을 것**이라는 가정이다. 이 가정이 성립하면 통제군의 변화를 처치군의 반사실로 사용할 수 있다.
+
+## 평행 추세의 시각화
+
+```{r parallel-trends-concept, fig.cap="그림 1: 평행추세 가정의 개념도"}
+# 가상 데이터로 평행추세 개념 시각화
+conceptual_df <- tribble(
+  ~time, ~group,        ~outcome, ~type,
+  0,     "Treatment",   10,       "Observed",
+  1,     "Treatment",   13,       "Observed",
+  0,     "Control",      8,       "Observed",
+  1,     "Control",      9,       "Observed",
+  0,     "Treatment (Counterfactual)", 10, "Counterfactual",
+  1,     "Treatment (Counterfactual)", 11, "Counterfactual"
+)
+
+p_concept <- ggplot(conceptual_df, aes(x = time, y = outcome, 
+                                        color = group, linetype = type)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3.5) +
+  # DiD 표시
+  annotate("segment", x = 1.02, xend = 1.02, y = 11, yend = 13,
+           arrow = arrow(length = unit(0.25, "cm"), ends = "both"),
+           color = "darkred", size = 0.8) +
+  annotate("text", x = 1.08, y = 12, label = "DiD = δ", 
+           color = "darkred", fontface = "bold", size = 4.5, hjust = 0) +
+  # 정책 시행 시점
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey50") +
+  annotate("text", x = 0.5, y = 13.8, label = "정책 시행",
+           hjust = 0.5, color = "grey30", size = 3.8) +
+  scale_x_continuous(breaks = c(0, 1), labels = c("Pre (t=0)", "Post (t=1)")) +
+  scale_color_manual(values = c("Treatment" = "#E74C3C",
+                                "Control" = "#3498DB",
+                                "Treatment (Counterfactual)" = "#E74C3C")) +
+  scale_linetype_manual(values = c("Observed" = "solid", 
+                                   "Counterfactual" = "dashed")) +
+  labs(title = "이중차분법의 직관: 평행추세 가정",
+       subtitle = "점선: 처치가 없었을 경우 처치군의 반사실 경로",
+       x = "시점", y = "결과변수 Y",
+       color = "집단", linetype = "경로") +
+  xlim(-0.1, 1.3)
+
+p_concept
+```
+
+---
+
+# 데이터
+
+## 데이터 출처
+
+원 자료는 David Card 교수의 웹사이트에서 공개되어 있다: 
+<http://davidcard.berkeley.edu/data_sets.html>
+
+파일 `public.dat`는 공백으로 구분된 텍스트 파일로, 410개 매장에 대한 Wave 1, Wave 2 변수들을 담고 있다.
+
+## 주요 변수 정의
+
+| 변수명 | 설명 |
+|:---|:---|
+| `state` | 1 = NJ (처치군), 0 = PA (통제군) |
+| `chain` | 체인 (1=BK, 2=KFC, 3=Roy Rogers, 4=Wendy's) |
+| `empft`, `empft2` | 풀타임 직원 수 (Wave 1, 2) |
+| `emppt`, `emppt2` | 파트타임 직원 수 |
+| `nmgrs`, `nmgrs2` | 관리자 수 |
+| `wage_st`, `wage_st2` | 시작 임금 |
+| `hrsopen`, `hrsopen2` | 영업시간 |
+
+**전일제 환산 고용(FTE, Full-Time Equivalent)**은 다음과 같이 정의된다:
+
+$$
+\text{FTE}_{it} = \text{EMPFT}_{it} + \text{NMGRS}_{it} + 0.5 \times \text{EMPPT}_{it}
+$$
+
+## 데이터 불러오기
+
+```{r load-data}
+# David Card 웹사이트에서 직접 다운로드
+url <- "http://davidcard.berkeley.edu/data_sets/njmin.zip"
+tmp <- tempfile(fileext = ".zip")
+
+# 다운로드가 실패할 경우를 대비한 안전장치
+tryCatch({
+  download.file(url, destfile = tmp, mode = "wb", quiet = TRUE)
+  unzip(tmp, exdir = tempdir())
+  data_path <- file.path(tempdir(), "public.dat")
+}, error = function(e) {
+  message("원 자료 다운로드 실패. 로컬 파일을 사용하거나 URL을 확인하세요.")
+})
+
+# 변수명 (codebook 기준)
+var_names <- c(
+  # 식별/지역 변수
+  "sheet", "chain", "co_owned", "state",
+  "southj", "centralj", "northj", "pa1", "pa2", "shore",
+  # Wave 1 변수
+  "ncalls", "empft", "emppt", "nmgrs",
+  "wage_st", "inctime", "firstinc", "bonus", "pctaff", "meals",
+  "open", "hrsopen", "psoda", "pfry", "pentree", "nregs", "nregs11",
+  # Wave 2 변수  
+  "type2", "status2", "date2",
+  "ncalls2", "empft2", "emppt2", "nmgrs2",
+  "wage_st2", "inctime2", "firstin2", "special2", "meals2",
+  "open2r", "hrsopen2", "psoda2", "pfry2", "pentree2",
+  "nregs2", "nregs112"
+)
+
+# 읽기 ('.' 을 결측값으로 처리)
+ck_raw <- read.table(data_path, 
+                     col.names = var_names,
+                     na.strings = ".",
+                     fill = TRUE,
+                     stringsAsFactors = FALSE)
+
+cat("총 매장 수:", nrow(ck_raw), "\n")
+cat("NJ 매장 수:", sum(ck_raw$state == 1), "\n")
+cat("PA 매장 수:", sum(ck_raw$state == 0), "\n")
+```
+
+## 데이터 정제: Long Format 변환
+
+DiD 분석을 위해 매장-웨이브(store-wave) 단위의 long format으로 변환한다.
+
+```{r data-cleaning}
+# FTE 계산 및 체인별 라벨
+chain_labels <- c("1" = "Burger King", "2" = "KFC", 
+                  "3" = "Roy Rogers", "4" = "Wendy's")
+
+# Wave 1 데이터
+wave1 <- ck_raw %>%
+  mutate(
+    wave = 1,
+    post = 0,
+    fte  = empft + nmgrs + 0.5 * emppt,
+    wage = wage_st,
+    hrsopen_w = hrsopen
+  ) %>%
+  select(sheet, chain, state, co_owned, wave, post, fte, wage, hrsopen_w)
+
+# Wave 2 데이터  
+wave2 <- ck_raw %>%
+  mutate(
+    wave = 2,
+    post = 1,
+    fte  = empft2 + nmgrs2 + 0.5 * emppt2,
+    wage = wage_st2,
+    hrsopen_w = hrsopen2
+  ) %>%
+  select(sheet, chain, state, co_owned, wave, post, fte, wage, hrsopen_w)
+
+# Long format 결합
+ck_long <- bind_rows(wave1, wave2) %>%
+  mutate(
+    state_f = factor(state, levels = c(0, 1), labels = c("PA", "NJ")),
+    wave_f  = factor(wave,  levels = c(1, 2), 
+                     labels = c("Feb-Mar 1992 (Pre)", "Nov-Dec 1992 (Post)")),
+    chain_f = factor(chain, levels = 1:4, labels = chain_labels)
+  ) %>%
+  filter(!is.na(fte))  # FTE 결측 제거
+
+# 균형 패널: 두 웨이브 모두 존재하는 매장만
+balanced_sheets <- ck_long %>%
+  group_by(sheet) %>%
+  filter(n() == 2) %>%
+  pull(sheet) %>%
+  unique()
+
+ck_balanced <- ck_long %>% filter(sheet %in% balanced_sheets)
+
+cat("균형패널 매장 수:", length(balanced_sheets), "\n")
+cat("총 관측치 수:", nrow(ck_balanced), "\n")
+```
+
+---
+
+# 기술통계 및 시각화
+
+## 집단별·시점별 평균 FTE
+
+```{r desc-stats}
+summary_tbl <- ck_balanced %>%
+  group_by(state_f, wave_f) %>%
+  summarise(
+    N       = n(),
+    mean_fte = mean(fte, na.rm = TRUE),
+    sd_fte   = sd(fte, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+summary_tbl %>%
+  kable(digits = 2, 
+        col.names = c("주(State)", "시점(Wave)", "N", "평균 FTE", "표준편차"),
+        caption = "표 1: 주별·시점별 FTE 고용 요약통계") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE)
+```
+
+## DiD 표 작성
+
+CK 논문의 Table 3을 재현해보자:
+
+```{r did-table}
+did_summary <- ck_balanced %>%
+  group_by(state_f, wave_f) %>%
+  summarise(mean_fte = mean(fte, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = wave_f, values_from = mean_fte) %>%
+  rename(Pre = `Feb-Mar 1992 (Pre)`, Post = `Nov-Dec 1992 (Post)`) %>%
+  mutate(`변화(Post-Pre)` = Post - Pre)
+
+# DiD 계산
+did_nj <- did_summary %>% filter(state_f == "NJ") %>% pull(`변화(Post-Pre)`)
+did_pa <- did_summary %>% filter(state_f == "PA") %>% pull(`변화(Post-Pre)`)
+did_estimate <- did_nj - did_pa
+
+did_summary %>%
+  kable(digits = 3, 
+        caption = "표 2: CK Table 3 재현 - FTE 고용 변화",
+        col.names = c("State", "Pre", "Post", "변화")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE)
+
+cat(sprintf("\n▶ DiD 추정치 = NJ변화(%.3f) - PA변화(%.3f) = %.3f FTE\n",
+            did_nj, did_pa, did_estimate))
+```
+
+## 평행 추세 시각화
+
+CK 자료는 두 시점만 존재하므로 **사전 평행 추세 검정**은 불가능하다. 다만, 관측된 두 시점에서의 궤적을 그리고, PA의 추세를 NJ의 반사실로 사용하는 DiD의 직관을 시각화할 수 있다.
+
+```{r parallel-trends-ck, fig.cap="그림 2: NJ-PA FTE 고용 궤적 및 DiD 직관"}
+# 집계 데이터
+agg_df <- ck_balanced %>%
+  group_by(state_f, post) %>%
+  summarise(fte_mean = mean(fte, na.rm = TRUE), 
+            se = sd(fte, na.rm = TRUE) / sqrt(n()),
+            .groups = "drop")
+
+# PA의 추세를 NJ에 평행 이동시킨 반사실
+pa_change <- did_pa
+nj_pre    <- agg_df %>% filter(state_f == "NJ", post == 0) %>% pull(fte_mean)
+cf_df <- tibble(
+  state_f = "NJ (Counterfactual)",
+  post    = c(0, 1),
+  fte_mean = c(nj_pre, nj_pre + pa_change)
+)
+
+plot_df <- agg_df %>%
+  mutate(state_f = as.character(state_f)) %>%
+  bind_rows(cf_df) %>%
+  mutate(state_f = factor(state_f, 
+                          levels = c("NJ", "PA", "NJ (Counterfactual)")))
+
+p_ck <- ggplot(plot_df, aes(x = post, y = fte_mean, 
+                             color = state_f, linetype = state_f)) +
+  geom_line(size = 1.3) +
+  geom_point(size = 3.5) +
+  # DiD 화살표
+  annotate("segment", 
+           x = 1.03, xend = 1.03,
+           y = nj_pre + pa_change, 
+           yend = agg_df %>% filter(state_f == "NJ", post == 1) %>% pull(fte_mean),
+           arrow = arrow(length = unit(0.3, "cm"), ends = "both"),
+           color = "darkred", size = 0.9) +
+  annotate("text", x = 1.08, 
+           y = nj_pre + pa_change + did_estimate/2,
+           label = sprintf("DiD = %.2f", did_estimate),
+           color = "darkred", fontface = "bold", size = 4.5, hjust = 0) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey60") +
+  annotate("text", x = 0.5, y = max(plot_df$fte_mean) + 0.5,
+           label = "1992.04.01\nNJ 최저임금\n$4.25 → $5.05",
+           hjust = 0.5, vjust = 1, size = 3.3, color = "grey20") +
+  scale_x_continuous(breaks = c(0, 1), 
+                     labels = c("Feb-Mar 1992\n(Pre)", "Nov-Dec 1992\n(Post)")) +
+  scale_color_manual(values = c("NJ" = "#E74C3C", 
+                                "PA" = "#3498DB",
+                                "NJ (Counterfactual)" = "#E74C3C")) +
+  scale_linetype_manual(values = c("NJ" = "solid", 
+                                   "PA" = "solid",
+                                   "NJ (Counterfactual)" = "dashed")) +
+  labs(title = "Card & Krueger (1994): FTE 고용 변화",
+       subtitle = "NJ(처치군)와 PA(통제군)의 평균 FTE, 점선은 PA 추세로부터의 NJ 반사실",
+       x = NULL, y = "평균 FTE 고용",
+       color = "집단", linetype = "집단") +
+  xlim(-0.1, 1.3)
+
+p_ck
+```
+
+## 임금 분포의 변화
+
+최저임금 인상이 실제로 임금 분포를 어떻게 변화시켰는지 확인:
+
+```{r wage-dist, fig.cap="그림 3: 시작 임금 분포의 변화 (NJ vs PA)"}
+p_wage <- ck_balanced %>%
+  filter(!is.na(wage)) %>%
+  ggplot(aes(x = wage, fill = state_f)) +
+  geom_histogram(binwidth = 0.1, position = "identity", alpha = 0.6) +
+  facet_grid(state_f ~ wave_f) +
+  geom_vline(xintercept = 4.25, linetype = "dashed", color = "black") +
+  geom_vline(xintercept = 5.05, linetype = "dashed", color = "darkred") +
+  scale_fill_manual(values = c("PA" = "#3498DB", "NJ" = "#E74C3C")) +
+  labs(title = "시작 임금(starting wage) 분포",
+       subtitle = "검은 점선: $4.25 (기존), 빨간 점선: $5.05 (NJ 신규)",
+       x = "시작 시급 ($)", y = "매장 수", fill = "주") +
+  theme(legend.position = "none")
+
+p_wage
+```
+
+정책 시행 후 NJ에서는 \$4.25 근처에 몰려 있던 분포가 \$5.05로 이동하여, 최저임금 인상이 실제로 구속력(binding)이 있었음을 확인할 수 있다.
+
+---
+
+# 주요 결과의 재현
+
+## 단순 평균 차이를 이용한 DiD
+
+수동으로 계산한 DiD:
+
+```{r manual-did}
+# 각 셀의 평균
+y_pa_pre  <- mean(ck_balanced$fte[ck_balanced$state==0 & ck_balanced$post==0], na.rm = TRUE)
+y_pa_post <- mean(ck_balanced$fte[ck_balanced$state==0 & ck_balanced$post==1], na.rm = TRUE)
+y_nj_pre  <- mean(ck_balanced$fte[ck_balanced$state==1 & ck_balanced$post==0], na.rm = TRUE)
+y_nj_post <- mean(ck_balanced$fte[ck_balanced$state==1 & ck_balanced$post==1], na.rm = TRUE)
+
+did_manual <- (y_nj_post - y_nj_pre) - (y_pa_post - y_pa_pre)
+
+tibble(
+  지표 = c("PA Pre", "PA Post", "NJ Pre", "NJ Post",
+           "NJ 변화", "PA 변화", "DiD 추정치"),
+  값 = c(y_pa_pre, y_pa_post, y_nj_pre, y_nj_post,
+         y_nj_post - y_nj_pre, y_pa_post - y_pa_pre, did_manual)
+) %>%
+  kable(digits = 3, caption = "표 3: 단순 DiD 계산") %>%
+  kable_styling(full_width = FALSE)
+```
+
+> **해석:** CK 논문 Table 3과 마찬가지로, NJ의 FTE 고용은 PA 대비 약 **+2.7 ~ +2.8 FTE** 증가하였다. 이는 경쟁적 노동시장 모형의 예측(고용 감소)과 반대되는 결과이다.
+
+## 회귀분석에 의한 DiD
+
+회귀식:
+
+$$
+\text{FTE}_{it} = \beta_0 + \beta_1 \text{NJ}_i + \beta_2 \text{Post}_t + \delta (\text{NJ}_i \times \text{Post}_t) + \varepsilon_{it}
+$$
+
+```{r did-regression}
+# 기본 DiD 회귀: 표준오차는 매장 수준에서 클러스터링
+m1 <- feols(fte ~ state * post, data = ck_balanced, cluster = ~sheet)
+
+# 매장 고정효과 포함 (양방향 고정효과)
+m2 <- feols(fte ~ state:post | sheet + post, data = ck_balanced, cluster = ~sheet)
+
+# 체인 × 소유형태 통제 추가
+m3 <- feols(fte ~ state * post + factor(chain) + co_owned, 
+            data = ck_balanced, cluster = ~sheet)
+
+# 결과 요약
+modelsummary(
+  list("(1) 기본 DiD" = m1, 
+       "(2) 매장 FE" = m2, 
+       "(3) 공변량 포함" = m3),
+  coef_map = c("state:post" = "NJ × Post (δ)",
+               "state"      = "NJ",
+               "post"       = "Post",
+               "co_owned"   = "Company-owned"),
+  gof_omit = "AIC|BIC|Log.Lik|RMSE|R2 Within",
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  title = "표 4: DiD 회귀 결과 (종속변수: FTE)",
+  notes = "괄호 안은 매장 수준 클러스터 표준오차"
+)
+```
+
+### 계수 해석
+
+식별의 핵심 계수는 상호작용항 $\delta$ (`state:post`)이다:
+
+- $\hat{\delta} \approx 2.75$: NJ의 최저임금 인상은 PA 대비 매장당 FTE 고용을 **약 2.75명 증가**시켰다.
+- 통계적 유의성은 표본과 모형에 따라 10% 수준에서 경계적이나, **부호는 일관되게 양(+)**이다.
+- 매장 고정효과(모형 2)는 단순 DiD와 수치적으로 동일하다: 2기간 균형패널에서 매장 FE는 개별 효과를 완전히 흡수하므로 $\delta$는 불변이다.
+
+## 대안 결과변수: 고용 변화량(First Difference)
+
+CK의 원 논문도 차분된 형태를 자주 사용한다. $\Delta \text{FTE}_i = \text{FTE}_{i,1} - \text{FTE}_{i,0}$를 종속변수로 하는 단면 회귀:
+
+$$
+\Delta \text{FTE}_i = \alpha + \delta \, \text{NJ}_i + u_i
+$$
+
+```{r first-diff}
+ck_diff <- ck_balanced %>%
+  select(sheet, chain, state, post, fte) %>%
+  pivot_wider(names_from = post, values_from = fte,
+              names_prefix = "fte_t") %>%
+  mutate(delta_fte = fte_t1 - fte_t0) %>%
+  filter(!is.na(delta_fte))
+
+m_fd <- feols(delta_fte ~ state, data = ck_diff, se = "hetero")
+
+modelsummary(list("First-Difference DiD" = m_fd),
+             coef_map = c("state" = "NJ (δ)",
+                          "(Intercept)" = "상수항"),
+             gof_omit = "AIC|BIC|Log.Lik|RMSE",
+             stars = c('*' = .1, '**' = .05, '***' = .01),
+             title = "표 5: 차분 회귀를 이용한 DiD")
+```
+
+이 결과는 앞의 DiD 회귀와 수학적으로 동일한 $\delta$를 산출해야 한다.
+
+## 임금-고용 관계 직접 추정 (CK Table 4 정신)
+
+CK는 초기 임금이 최저임금에 가까웠던 매장일수록 "구속력(bite)"이 컸다는 점을 이용해 임금 갭(gap) 변수를 사용하기도 한다:
+
+$$
+\text{GAP}_i = \begin{cases} 0 & \text{if } i \in \text{PA} \\ 0 & \text{if } i \in \text{NJ, } w_{i,0} \geq 5.05 \\ \dfrac{5.05 - w_{i,0}}{w_{i,0}} & \text{if } i \in \text{NJ, } w_{i,0} < 5.05 \end{cases}
+$$
+
+```{r gap-specification}
+ck_gap <- ck_balanced %>%
+  select(sheet, state, post, fte, wage) %>%
+  pivot_wider(names_from = post, values_from = c(fte, wage)) %>%
+  mutate(
+    gap = case_when(
+      state == 0 ~ 0,
+      state == 1 & wage_0 >= 5.05 ~ 0,
+      state == 1 & wage_0 <  5.05 ~ (5.05 - wage_0) / wage_0,
+      TRUE ~ NA_real_
+    ),
+    delta_fte = fte_1 - fte_0
+  ) %>%
+  filter(!is.na(delta_fte), !is.na(gap))
+
+m_gap <- feols(delta_fte ~ gap, data = ck_gap, se = "hetero")
+
+modelsummary(list("Gap-based 추정" = m_gap),
+             coef_map = c("gap" = "GAP (구속력)",
+                          "(Intercept)" = "상수항"),
+             gof_omit = "AIC|BIC|Log.Lik|RMSE",
+             stars = c('*' = .1, '**' = .05, '***' = .01),
+             title = "표 6: 임금 갭 변수를 이용한 추정")
+```
+
+> **해석:** GAP 계수가 **양(+)**으로 나오면, 최저임금 인상의 구속력이 컸던(저임금이었던) 매장일수록 고용이 더 증가했음을 의미한다. 이는 수요-공급 모형의 예측과 정반대이며, CK의 핵심 주장을 뒷받침한다.
+
+---
+
+# 논의 및 한계
+
+## 식별 가정의 검토
+
+1. **평행 추세:** 두 시점만으로는 사전 평행추세를 검정할 수 없다. CK 이후 연구들(예: Dube, Lester, and Reich, 2010)은 접경 카운티 쌍 설계로 이를 강화하였다.
+2. **SUTVA(안정적 단위 처치값 가정):** NJ의 정책이 PA 매장에 영향을 미치지 않았다고 가정한다. 접경 지역에서는 노동자 이동으로 위반될 수 있다.
+3. **측정 오차:** Neumark and Wascher(2000)는 전화조사 자료가 행정자료(BLS 급여명세)와 체계적 차이를 보인다고 지적하였다. Card and Krueger(2000)는 급여명세 자료로도 주요 결과가 유지됨을 보였다.
+
+## 후속 연구
+
+- **Neumark and Wascher(2000):** 행정자료 기반 재분석, 음의 고용 효과 주장
+- **Card and Krueger(2000):** BLS ES-202 급여명세 자료를 이용한 반박
+- **Dube, Lester, and Reich(2010):** 모든 접경 카운티 쌍으로 확장, 유의한 음의 효과 없음을 보고
+- **Cengiz, Dube, Lindner, and Zipperer(2019):** Bunching 추정량을 이용한 새로운 방법론
+
+## 현대적 확장
+
+현대의 DiD 문헌은 **시차가 다른(staggered) 처치**와 **이질적 처치효과**를 고려한다:
+
+$$
+Y_{it} = \alpha_i + \lambda_t + \sum_{k \neq -1} \gamma_k \, D_{it}^{(k)} + \varepsilon_{it}
+$$
+
+여기서 $D_{it}^{(k)}$는 처치 시점으로부터 $k$기 떨어진 이벤트 더미이다. Goodman-Bacon(2021), Callaway and Sant'Anna(2021), Sun and Abraham(2021) 등의 연구는 TWFE 추정량의 편의(bias) 문제를 지적하고 대안을 제시하였다. CK의 2기간 단순 설계는 이러한 문제에서 자유롭다는 장점이 있다.
+
+---
+
+# 참고문헌
+
+- Brown, C., Gilroy, C., and Kohen, A. (1982). "The Effect of the Minimum Wage on Employment and Unemployment." *Journal of Economic Literature*, 20(2), 487–528.
+- Callaway, B., and Sant'Anna, P. H. C. (2021). "Difference-in-Differences with Multiple Time Periods." *Journal of Econometrics*, 225(2), 200–230.
+- Card, D., and Krueger, A. B. (1994). "Minimum Wages and Employment: A Case Study of the Fast-Food Industry in New Jersey and Pennsylvania." *American Economic Review*, 84(4), 772–793.
+- Card, D., and Krueger, A. B. (2000). "Minimum Wages and Employment: A Case Study of the Fast-Food Industry in New Jersey and Pennsylvania: Reply." *American Economic Review*, 90(5), 1397–1420.
+- Cengiz, D., Dube, A., Lindner, A., and Zipperer, B. (2019). "The Effect of Minimum Wages on Low-Wage Jobs." *Quarterly Journal of Economics*, 134(3), 1405–1454.
+- Dube, A., Lester, T. W., and Reich, M. (2010). "Minimum Wage Effects Across State Borders: Estimates Using Contiguous Counties." *Review of Economics and Statistics*, 92(4), 945–964.
+- Goodman-Bacon, A. (2021). "Difference-in-Differences with Variation in Treatment Timing." *Journal of Econometrics*, 225(2), 254–277.
+- Neumark, D., and Wascher, W. (2000). "Minimum Wages and Employment: A Case Study of the Fast-Food Industry in New Jersey and Pennsylvania: Comment." *American Economic Review*, 90(5), 1362–1396.
+- Sun, L., and Abraham, S. (2021). "Estimating Dynamic Treatment Effects in Event Studies with Heterogeneous Treatment Effects." *Journal of Econometrics*, 225(2), 175–199.
+
+---
+
+**세션 정보**
+
+```{r session, echo=FALSE}
+sessionInfo()
+```

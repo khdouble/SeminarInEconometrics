@@ -1,0 +1,960 @@
+---
+title: "계량경제학 세미나"
+subtitle: "도구변수 회귀분석"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output:
+  ioslides_presentation:
+    widescreen: true
+    smaller: false
+    self_contained: true
+    fig_caption: true
+    transition: default
+    df_print: paged
+fontsize: 11pt
+---
+
+<style>
+.title-slide hgroup h1 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+.title-slide hgroup h2,
+.title-slide hgroup h3,
+.title-slide p {
+  color: #222 !important;
+}
+slide:not(.title-slide) hgroup {
+  border-bottom: 6px solid transparent;
+  border-image: linear-gradient(to right, #e3c900 0 30%, #8bc34a 30% 70%, #3f6fca 70% 100%) 1;
+  padding-bottom: 8px;
+}
+slide:not(.title-slide) hgroup h2 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+pre.prettyprint {
+  font-size: 0.66em;
+  line-height: 1.22em;
+}
+code {
+  font-size: 0.95em;
+}
+.small {
+  font-size: 0.90em;
+}
+.xsmall {
+  font-size: 0.82em;
+}
+.tiny {
+  font-size: 0.75em;
+}
+</style>
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7.5,
+  fig.height = 4.5,
+  fig.align = "center",
+  comment = "#>"
+)
+
+# 필요한 패키지가 없다면 아래 주석을 해제하여 설치하세요.
+# install.packages(c("AER", "ivreg", "ggplot2", "dplyr", "lmtest", "sandwich", "knitr", "MASS"))
+
+library(AER)
+library(ivreg)
+library(ggplot2)
+library(dplyr)
+library(lmtest)
+library(sandwich)
+library(knitr)
+library(MASS)
+
+set.seed(1234)
+
+round_df <- function(x, digits = 4) {
+  x[] <- lapply(x, function(col) if (is.numeric(col)) round(col, digits) else col)
+  x
+}
+```
+
+## 강의 개요 {#overview .center .middle}
+
+### 도구변수 분석의 필요성
+
+- 왜 OLS는 내생성 앞에서 무너지는가?
+- 어떤 조건에서 도구변수는 인과효과를 식별하는가?
+- 2SLS를 실제 데이터에 어떻게 적용하고 진단하는가?
+- 약한 도구변수, 과식별, Wu-Hausman 검정을 어떻게 해석하는가?
+
+
+## 학습목표
+
+1. 외생성, 내생성, 도구변수의 개념을 설명할 수 있다.
+2. 관련성(relevance)과 외생성(exogeneity)을 구분할 수 있다.
+3. 2SLS의 1단계와 2단계를 수식과 코드로 구현할 수 있다.
+4. OLS와 IV 추정치를 비교하여 내생성 가능성을 해석할 수 있다.
+5. 약한 도구변수, 과식별, Hausman 계열 검정을 읽을 수 있다.
+
+
+## 용어: 외생성과 내생성
+
+핵심 정의
+
+- 설명변수 $X$가 오차항 $u$와 관련이 있으면 **내생변수**이다.
+- 설명변수 $X$가 오차항 $u$와 관련이 없으면 **외생변수**이다.
+- 도구변수 회귀에서는 $X$가 내생적일 때, $X$와는 관련되지만 $u$와는 관련되지 않는 외생적 변수 $Z$를 찾는다.
+
+수식으로 쓰면,
+
+$$
+Y_i = \beta_0 + \beta_1 X_i + u_i
+$$
+
+OLS의 핵심 가정은
+
+$$
+E[u_i \mid X_i] = 0
+$$
+
+인데, 내생성이 있으면 이 가정이 깨진다.
+
+
+## 왜 내생성이 생기는가?
+
+주요 원인은 다음과 같다.
+
+- 누락변수(omitted variable)
+- 역인과관계(reverse causality)
+- 측정오류(measurement error)
+- 동시방정식(simultaneous equations)
+
+이 경우 OLS 추정량은 일반적으로
+
+- 편향(bias)을 가질 수 있고,
+- 표본이 커져도 참값으로 수렴하지 않는 비일관성(inconsistency)을 가질 수 있다.
+
+
+## OLS가 왜 위험한가?
+
+OLS에서
+
+$$
+\hat\beta_1^{OLS} = \beta_1 + \frac{\operatorname{Cov}(X,u)}{\operatorname{Var}(X)}
+$$
+
+이므로, $\operatorname{Cov}(X,u) \neq 0$이면 편향이 생긴다.
+
+따라서 OLS로 얻은 계수를 곧바로 인과효과로 해석하면 위험하다.
+
+- 정책효과 추정이 왜곡될 수 있다.
+- 인과 방향을 잘못 해석할 수 있다.
+- 예측은 맞더라도 구조적 해석은 틀릴 수 있다.
+
+
+## 간단한 시뮬레이션: 누락변수 편향
+
+```{r sim-ovb, eval=FALSE}
+n <- 2000
+z <- rnorm(n)
+omega <- rnorm(n)
+u <- 0.8 * z + rnorm(n)
+x <- 1 + 0.7 * z + omega
+
+y <- 2 + 1.5 * x + u
+
+true_beta <- 1.5
+ols_bias_model <- lm(y ~ x)
+coef(ols_bias_model)["x"]
+```
+
+- 참계수는 1.5이다.
+- 그러나 $x$와 $u$가 공통요인 $z$ 때문에 연결되면 OLS는 참값에서 벗어난다.
+- 이 상황에서 $z$를 관측하지 못하면 단순 회귀는 구조적으로 틀린 모형이 된다.
+
+
+## 시뮬레이션 그림: 누락변수 편향
+
+```{r sim-ovb-plot, eval=FALSE}
+sim_df <- data.frame(x = x, y = y)
+
+ggplot(sim_df, aes(x = x, y = y)) +
+  geom_point(alpha = 0.35) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "누락변수로 인해 OLS가 왜곡되는 상황",
+    x = "내생적 설명변수 X",
+    y = "종속변수 Y"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+이 그림은 단순한 선형관계처럼 보이지만, 실제로는 보이지 않는 요인이 $x$와 $y$ 모두에 영향을 주고 있다.
+
+
+## 내생성 해결 방법들
+
+내생성 대응 방법은 다음과 같다.
+
+- 무작위실험(RCT)
+  - 가장 이상적이지만 현실적 제약이 큼
+- 패널데이터 고정효과
+  - 시간불변 누락요인 완화 가능
+- 도구변수(IV)
+  - 비실험 자료에서 내생성에 대응하는 대표적 방법
+
+이 강의의 초점은 세 번째인 도구변수 회귀분석이다.
+
+
+## 도구변수의 기본 아이디어
+
+우리가 원하는 것은 $X$ 전체의 변화가 아니라, **오차항과 무관한 $X$의 외생적 변화만 이용하는 것**이다.
+
+도구변수 $Z$는 다음 두 조건을 만족해야 한다.
+
+1. **관련성**: $Z$는 $X$를 움직여야 한다.
+2. **외생성**: $Z$는 오직 $X$를 통해서만 $Y$에 영향을 줘야 한다.
+
+도식적으로는
+
+$$
+Z \rightarrow X \rightarrow Y
+$$
+
+이며, $Z \not\rightarrow u$ 이어야 한다.
+
+
+## 단일 설명변수와 단일 도구변수
+
+기본 모형은 다음과 같이 정리할 수 있다.
+
+$$
+Y_i = \beta_0 + \beta_1 X_i + u_i
+$$
+
+여기서 $X_i$가 내생적이라고 하자. 그러면 $Z_i$를 사용해 $X_i$ 중 외생적인 부분만 분리한다.
+
+단일 도구변수의 경우 IV 추정량은 Wald 형태로 쓸 수 있다.
+
+$$
+\hat\beta_1^{IV} = \frac{\operatorname{Cov}(Z,Y)}{\operatorname{Cov}(Z,X)}
+$$
+
+즉, 도구변수가 만들어낸 $X$의 변화를 이용해 $Y$의 변화를 식별한다.
+
+
+## 도구변수의 식별 조건
+
+### 1. 관련성 (Relevance)
+
+$$
+\operatorname{Cov}(Z, X) \neq 0
+$$
+
+도구변수는 내생 설명변수와 유의한 상관관계가 있어야 한다.
+
+### 2. 외생성 (Exogeneity)
+
+$$
+\operatorname{Cov}(Z, u) = 0
+$$
+
+도구변수는 오차항과 독립이어야 한다.
+
+### 3. 배제제약 (Exclusion Restriction)
+
+도구변수는 종속변수에 **직접** 영향을 주어서는 안 되고, 반드시 $X$를 통해서만 영향을 주어야 한다.
+
+
+## 관련성과 외생성을 구분하자
+
+
+- **관련성**은 데이터에서 어느 정도 점검 가능하다.
+  - 1단계 회귀의 계수, t통계량, F통계량 확인
+- **외생성**은 이론과 제도적 맥락이 매우 중요하다.
+  - 통계적으로 완전히 증명되는 것이 아니다.
+  - 과식별 상황에서만 일부 검정 가능하다.
+
+즉, **강한 상관관계가 있다고 해서 좋은 도구변수는 아니다.**
+
+
+## 2SLS: 두 단계 최소자승법
+
+
+### 1단계
+
+$$
+X_i = \pi_0 + \pi_1 Z_i + v_i
+$$
+
+도구변수 $Z$로부터 $X$의 예측값 $\hat X$를 만든다.
+
+### 2단계
+
+$$
+Y_i = \alpha_0 + \alpha_1 \hat X_i + e_i
+$$
+
+1단계에서 얻은 $\hat X$를 사용해 $Y$를 회귀한다.
+
+핵심은 원래의 $X$ 대신 **오차항과 상관없는 부분만 남은 $\hat X$**를 사용한다는 점이다.
+
+
+## 2SLS의 직관
+
+2SLS는 다음 질문에 답한다.
+
+> “도구변수 때문에 바뀐 $X$의 부분만 놓고 보면, 그 변화가 $Y$를 얼마나 움직이는가?”
+
+이 때문에 2SLS는
+
+- OLS보다 덜 효율적일 수 있지만,
+- 내생성이 있을 때는 더 신뢰할 만한 구조적 추정치를 줄 수 있다.
+
+단, 도구변수가 약하거나 외생성이 틀리면 IV도 믿을 수 없다.
+
+
+## 직접 2단계를 구현해 보기
+
+```{r manual-2sls-demo, eval=FALSE}
+# 간단한 예시 데이터 생성
+n <- 1000
+z_demo <- rnorm(n)
+u_demo <- rnorm(n)
+x_demo <- 0.8 * z_demo + 0.7 * u_demo + rnorm(n)
+y_demo <- 1 + 2 * x_demo + u_demo
+
+demo_df <- data.frame(y_demo, x_demo, z_demo)
+
+# 1단계
+fs_demo <- lm(x_demo ~ z_demo, data = demo_df)
+demo_df$xhat <- fitted(fs_demo)
+
+# 2단계
+ss_demo <- lm(y_demo ~ xhat, data = demo_df)
+
+coef(fs_demo)
+coef(ss_demo)
+```
+
+주의할 점은, 실전에서는 표준오차 계산 때문에 **직접 두 단계를 따로 돌리기보다 `ivreg()`를 쓰는 것이 바람직**하다는 점이다.
+
+
+## 왜 `ivreg()`를 쓰는가?
+
+직접 1단계와 2단계를 따로 돌리면 계수의 직관은 이해하기 쉽다. 하지만 실제 분석에서는 다음이 중요하다.
+
+- 올바른 표준오차 계산
+- 약한 도구변수 진단
+- Wu-Hausman 검정
+- 과식별 검정(Sargan/Hansen 계열)
+
+현재 `ivreg` 패키지는 2SLS 추정과 다양한 진단 기능을 함께 제공한다. 또한 공식 문서에 따르면 `ivreg()`는 AER의 기존 구현을 확장·대체하며 진단 기능을 폭넓게 지원한다.
+
+
+## 수요-공급 곡선 예시
+
+
+수요식과 공급식이 동시에 존재하면 가격과 수량은 함께 결정된다.
+
+$$
+Q_t^d = \alpha_0 + \alpha_1 P_t + \alpha_2 W_t + u_t
+$$
+
+$$
+Q_t^s = \gamma_0 + \gamma_1 P_t + \gamma_2 C_t + v_t
+$$
+
+시장균형에서는 $Q_t^d = Q_t^s = Q_t$ 이므로 가격 $P_t$는 수요식의 오차와 상관될 수 있다. 따라서 수요함수에서 가격을 OLS로 추정하면 편향이 생길 수 있다.
+
+
+## 수요를 추정할 때 어떤 IV를 쓰는가?
+
+수요함수에서 가격이 내생적이라면, 공급 측 외생변수를 가격의 도구변수로 사용할 수 있다.
+
+예를 들면,
+
+- 생산원가
+- 운송비
+- 세금
+- 원재료 가격
+
+이 변수들은 가격에는 영향을 주되, 수요 오차항에는 직접 들어가지 않는다고 가정할 수 있다.
+
+
+## 식별: 정확식별, 과대식별, 과소식별
+
+내생변수의 수를 $m$, 도구변수의 수를 $q$라고 하자.
+
+- $q = m$: **정확식별**
+- $q > m$: **과대식별**
+- $q < m$: **과소식별**
+
+과소식별이면 모형은 식별되지 않는다. 즉, 계수를 추정할 수 없다.
+
+과대식별이면 추가 도구변수 덕분에 외생성에 대한 검정을 일부 수행할 수 있다.
+
+
+## 일반적인 IV 회귀모형
+
+일반형을 표준 표기로 쓰면 다음과 같다.
+
+$$
+Y_i = \beta_0 + \beta_1 X_{1i} + \cdots + \beta_m X_{mi}
+      + \gamma_1 W_{1i} + \cdots + \gamma_k W_{ki} + u_i
+$$
+
+- $Y_i$: 종속변수
+- $X_{1i}, \dots, X_{mi}$: 내생변수
+- $W_{1i}, \dots, W_{ki}$: 외생 통제변수
+- $Z_{1i}, \dots, Z_{qi}$: 도구변수
+
+중요한 실무 규칙:
+
+> 외생 통제변수는 도구변수 목록에도 함께 포함되어야 한다.
+
+이는 `ivreg(y ~ ex + en | ex + z)` 형식으로 구현한다. CRAN의 AER 문서도 이 점을 명시한다.
+
+
+## 실습 데이터: CigarettesSW
+
+미국 주별 담배 수요 자료 `CigarettesSW`를 사용한다.
+
+이 데이터는 AER 패키지에 포함되어 있으며, 담배 소비, 가격, 세금, 소득 등의 정보를 제공한다. AER 공식 예시는 실질 가격 `rprice`, 실질 소득 `rincome`, 그리고 세금 관련 도구변수 `tdiff`, `tax/cpi`를 사용한다.
+
+```{r load-data, eval=FALSE}
+data("CigarettesSW")
+
+cig <- transform(
+  CigarettesSW,
+  rprice  = price / cpi,
+  rincome = income / population / cpi,
+  tdiff   = (taxs - tax) / cpi
+)
+
+c1995 <- subset(cig, year == "1995")
+
+c1995 <- c1995 %>%
+  mutate(
+    log_packs   = log(packs),
+    log_rprice  = log(rprice),
+    log_rincome = log(rincome),
+    sales_tax   = tax / cpi
+  )
+
+head(c1995[, c("state", "packs", "rprice", "rincome", "tdiff", "sales_tax")])
+```
+
+
+## 변수 확인
+
+```{r var-table, eval=FALSE}
+var_desc <- data.frame(
+  변수 = c("packs", "rprice", "rincome", "tdiff", "sales_tax"),
+  의미 = c(
+    "1인당 연간 담배 소비량",
+    "실질 담배 가격",
+    "실질 1인당 소득",
+    "세금 차이 기반 도구변수",
+    "실질 세금 수준"
+  ),
+  역할 = c(
+    "종속변수", "내생 가능 설명변수", "외생 통제변수", "도구변수 후보", "도구변수 후보"
+  )
+)
+
+kable(var_desc, align = "lll")
+```
+
+
+## 자료 탐색 1: 가격과 소비
+
+```{r plot-price-packs, eval=FALSE}
+ggplot(c1995, aes(x = log_rprice, y = log_packs)) +
+  geom_point(size = 2, alpha = 0.75) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "담배 가격과 소비의 관계",
+    x = "log(실질 가격)",
+    y = "log(1인당 담배 소비량)"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+단순 산점도는 음의 관계를 보여줄 수 있지만, 이것만으로는 인과효과를 말할 수 없다.
+
+
+## 자료 탐색 2: 세금과 가격
+
+```{r plot-tax-price, eval=FALSE}
+ggplot(c1995, aes(x = sales_tax, y = log_rprice)) +
+  geom_point(size = 2, alpha = 0.75) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "세금과 담배 가격: 관련성 점검의 출발점",
+    x = "실질 세금 수준",
+    y = "log(실질 가격)"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+이 그림은 도구변수의 **관련성**을 직관적으로 확인하는 첫 단계이다.
+
+
+## 자료 탐색 3: 세금과 소비의 reduced-form 관계
+
+```{r plot-tax-packs, eval=FALSE}
+ggplot(c1995, aes(x = sales_tax, y = log_packs)) +
+  geom_point(size = 2, alpha = 0.75) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "도구변수와 종속변수의 reduced-form 관계",
+    x = "실질 세금 수준",
+    y = "log(1인당 담배 소비량)"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+이 그림은 IV의 reduced-form 직관을 이해하는 데 도움이 된다. 다만, 이 관계만으로 외생성이 확인되지는 않는다.
+
+
+## 기본 OLS 추정
+
+OLS를 먼저 추정해 보자.
+
+```{r ols-estimation, eval=FALSE}
+ols_model <- lm(log_packs ~ log_rprice + log_rincome, data = c1995)
+summary(ols_model)
+```
+
+해석 포인트:
+
+- `log_rprice`의 계수는 가격탄력성 해석이 가능하다.
+- `log_rincome`의 계수는 소득탄력성 해석이 가능하다.
+- 그러나 가격이 내생적이면 OLS 계수는 인과효과가 아닐 수 있다.
+
+
+## OLS 결과를 표로 정리
+
+```{r ols-robust-table, eval=FALSE}
+ols_robust <- coeftest(ols_model, vcov. = vcovHC(ols_model, type = "HC1"))
+ols_tab <- data.frame(
+  term = rownames(ols_robust),
+  estimate = ols_robust[, 1],
+  std.error = ols_robust[, 2],
+  statistic = ols_robust[, 3],
+  p.value = ols_robust[, 4],
+  row.names = NULL
+)
+
+kable(round_df(ols_tab, 4), caption = "OLS with robust standard errors")
+```
+
+
+## 1단계 회귀: 도구변수가 가격을 설명하는가?
+
+```{r first-stage, eval=FALSE}
+first_stage <- lm(log_rprice ~ sales_tax + log_rincome, data = c1995)
+summary(first_stage)
+```
+
+관련성 점검에서 가장 먼저 보는 것은
+
+- 도구변수 계수의 유의성,
+- 1단계 설명력,
+- F통계량이다.
+
+
+## 1단계 적합값 시각화
+
+```{r first-stage-plot, eval=FALSE}
+c1995$price_hat_fs <- fitted(first_stage)
+
+ggplot(c1995, aes(x = price_hat_fs, y = log_rprice)) +
+  geom_point(size = 2, alpha = 0.75) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2) +
+  labs(
+    title = "1단계 적합값과 실제 가격",
+    x = "1단계에서 예측된 log(실질 가격)",
+    y = "실제 log(실질 가격)"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+도구변수가 강할수록 적합값은 실제 내생변수의 변동을 더 잘 설명한다.
+
+
+## 직접 구현하는 2SLS
+
+2단계 아이디어를 코드로 그대로 적어보면 다음과 같다.
+
+```{r manual-2sls-cigs, eval=FALSE}
+# 1단계
+fs_cigs <- lm(log_rprice ~ sales_tax + log_rincome, data = c1995)
+c1995$log_rprice_hat <- fitted(fs_cigs)
+
+# 2단계
+manual_2sls <- lm(log_packs ~ log_rprice_hat + log_rincome, data = c1995)
+summary(manual_2sls)
+```
+
+이 방식은 교육용으로는 좋지만, 표준오차가 정확하지 않기 때문에 실전 추론에는 `ivreg()`를 사용해야 한다.
+
+
+## `ivreg()`로 2SLS 추정: 단일 도구변수
+
+```{r iv-single, eval=FALSE}
+iv_single <- ivreg(
+  log_packs ~ log_rprice + log_rincome |
+    log_rincome + sales_tax,
+  data = c1995
+)
+
+summary(iv_single)
+```
+
+여기서 오른쪽 `|` 뒤의 식은 **도구변수 집합**이다.
+
+- `log_rincome`은 외생 통제변수이므로 자기 자신을 도구로 포함한다.
+- `sales_tax`는 `log_rprice`의 도구변수 역할을 한다.
+
+
+## 단일 IV 추정: 강건표준오차
+
+```{r iv-single-robust, eval=FALSE}
+iv_single_robust <- coeftest(iv_single, vcov. = vcovHC(iv_single, type = "HC1"))
+iv_single_tab <- data.frame(
+  term = rownames(iv_single_robust),
+  estimate = iv_single_robust[, 1],
+  std.error = iv_single_robust[, 2],
+  statistic = iv_single_robust[, 3],
+  p.value = iv_single_robust[, 4],
+  row.names = NULL
+)
+
+kable(round_df(iv_single_tab, 4), caption = "Single-IV 2SLS with robust standard errors")
+```
+
+
+## OLS와 IV의 비교
+
+```{r compare-ols-iv, eval=FALSE}
+extract_robust <- function(model, vcov_mat, model_name, keep_terms = c("log_rprice", "log_rincome")) {
+  ct <- coeftest(model, vcov. = vcov_mat)
+  out <- data.frame(
+    model = model_name,
+    term = rownames(ct),
+    estimate = ct[, 1],
+    std.error = ct[, 2],
+    p.value = ct[, 4],
+    row.names = NULL
+  )
+  out[out$term %in% keep_terms, ]
+}
+
+comp_tab <- bind_rows(
+  extract_robust(ols_model, vcovHC(ols_model, type = "HC1"), "OLS"),
+  extract_robust(iv_single, vcovHC(iv_single, type = "HC1"), "2SLS (single IV)")
+)
+
+kable(round_df(comp_tab, 4), caption = "OLS vs IV comparison")
+```
+
+해석 포인트:
+
+- OLS와 IV의 가격계수가 꽤 다르면 내생성 가능성을 의심할 수 있다.
+- 다만 차이가 있다고 해서 자동으로 IV가 옳다는 뜻은 아니다.
+- 결국 도구변수의 타당성이 핵심이다.
+
+
+## 다중 IV 모형으로 확장
+
+여러 개의 도구변수를 사용하면
+
+- 관련성을 높일 수 있고,
+- 과식별 검정을 할 수 있다고 설명한다.
+
+AER의 공식 예시도 `tdiff`와 `tax/cpi`를 함께 사용한다.
+
+```{r iv-multi, eval=FALSE}
+iv_multi <- ivreg(
+  log_packs ~ log_rprice + log_rincome |
+    log_rincome + tdiff + sales_tax,
+  data = c1995
+)
+
+summary(iv_multi)
+```
+
+
+## 다중 IV 추정 결과
+
+```{r iv-multi-robust, eval=FALSE}
+iv_multi_robust <- coeftest(iv_multi, vcov. = vcovHC(iv_multi, type = "HC1"))
+iv_multi_tab <- data.frame(
+  term = rownames(iv_multi_robust),
+  estimate = iv_multi_robust[, 1],
+  std.error = iv_multi_robust[, 2],
+  statistic = iv_multi_robust[, 3],
+  p.value = iv_multi_robust[, 4],
+  row.names = NULL
+)
+
+kable(round_df(iv_multi_tab, 4), caption = "Multi-IV 2SLS with robust standard errors")
+```
+
+
+## 약한 도구변수 문제
+
+핵심 포인트:
+
+- 도구변수가 내생변수와 약하게만 연결되면 2SLS 추정치가 불안정해진다.
+- 표준오차가 커지고 추론이 왜곡될 수 있다.
+- 경험적으로는 1단계 F통계량이 10 미만이면 weak IV를 심각하게 의심한다.
+
+이 규칙은 매우 널리 쓰이는 경험칙(rule of thumb)이다. 
+
+
+## 1단계 F통계량 확인
+
+```{r first-stage-f, eval=FALSE}
+fs_summary <- summary(first_stage)
+fs_summary$fstatistic
+```
+
+이 값은 전체 1단계 회귀의 F통계량이다. 실무에서는 `ivreg()`의 진단표에서 약한 도구변수 관련 검정을 함께 확인하는 것이 편리하다.
+
+
+## `ivreg()`의 진단표
+
+AER의 문서에 따르면 `summary(ivreg_object, diagnostics = TRUE)`는 약한 도구변수 1단계 F 검정, Wu-Hausman 검정, 그리고 과대식별일 때 Sargan 검정을 제공한다.
+
+```{r diagnostics-table, eval=FALSE}
+diag_obj <- summary(iv_multi, diagnostics = TRUE)
+diag_table <- as.data.frame(diag_obj$diagnostics)
+diag_table$test <- rownames(diag_table)
+diag_table <- diag_table[, c("test", colnames(diag_table)[1:3])]
+rownames(diag_table) <- NULL
+
+kable(round_df(diag_table, 4), caption = "IV diagnostics")
+```
+
+
+## 과식별 검정은 무엇을 말해 주는가?
+
+과대식별 상황에서는 추가 도구변수를 이용해 다음 귀무가설을 검정할 수 있다.
+
+> “모든 도구변수는 외생적이다.”
+
+대표적으로
+
+- Sargan 검정
+- Hansen의 J 검정
+
+이 사용된다.
+
+주의할 점:
+
+- 귀무가설을 기각하지 못했다고 해서 외생성이 증명된 것은 아니다.
+- 기각되면 적어도 하나의 도구변수가 문제가 있을 가능성을 시사한다.
+
+
+## Wu-Hausman 검정의 직관
+
+
+- 귀무가설: 내생성이 없다. 즉 OLS가 일관적이다.
+- 대립가설: 내생성이 있다. 따라서 IV가 필요하다.
+
+직관적으로 설명하면, 
+
+- 내생성이 없으면 OLS와 IV 추정치는 크게 다르지 않아야 한다.
+- 내생성이 있으면 OLS와 IV 추정치가 유의하게 달라질 수 있다.
+
+
+## Wu-Hausman 검정: `ivreg()`로 확인
+
+```{r wu-hausman-auto, eval=FALSE}
+summary(iv_single, diagnostics = TRUE)$diagnostics
+```
+
+이 출력에는 보통
+
+- weak instruments test,
+- Wu-Hausman,
+- Sargan test(과대식별일 때)
+
+가 포함된다.
+
+
+## Hausman 코드
+
+```{r hausman-manual, eval=FALSE}
+hausman_test_manual <- function(ols, iv) {
+  b_ols <- coef(ols)
+  b_iv  <- coef(iv)
+  common <- intersect(names(b_ols), names(b_iv))
+  
+  # 보통 비교 핵심은 내생 가능 변수의 계수이므로 intercept 포함 전체 공통계수를 사용
+  d <- b_iv[common] - b_ols[common]
+  V_ols <- vcov(ols)[common, common, drop = FALSE]
+  V_iv  <- vcov(iv)[common, common, drop = FALSE]
+  Vdiff <- V_iv - V_ols
+  
+  stat <- as.numeric(t(d) %*% ginv(Vdiff) %*% d)
+  df <- length(d)
+  pval <- 1 - pchisq(stat, df)
+  
+  list(statistic = stat, df = df, p.value = pval)
+}
+
+hausman_test_manual(ols_model, iv_single)
+```
+
+실무에서는 이 수동 계산보다 `summary(iv_model, diagnostics = TRUE)`를 우선 권장한다.
+
+
+## 측정오류도 IV가 필요한 대표 상황이다
+
+내생성을 동시인과관계에만 한정하지 않고, 누락변수와 측정오류까지 포함해 넓게 이해해야 한다
+
+```{r sim-measurement-error, eval=FALSE}
+n <- 3000
+z <- rnorm(n)
+x_true <- 0.8 * z + rnorm(n)
+y <- 1 + 2 * x_true + rnorm(n)
+measurement_error <- rnorm(n, sd = 1.5)
+x_obs <- x_true + measurement_error
+
+me_df <- data.frame(y, x_true, x_obs, z)
+
+me_ols <- lm(y ~ x_obs, data = me_df)
+me_iv  <- ivreg(y ~ x_obs | z, data = me_df)
+
+c(
+  true_beta = 2,
+  ols_beta  = coef(me_ols)["x_obs"],
+  iv_beta   = coef(me_iv)["x_obs"]
+)
+```
+
+측정오류가 있으면 OLS는 보통 0 쪽으로 수축되는 attenuation bias를 보인다. 적절한 도구변수가 있으면 이 문제를 완화할 수 있다.
+
+
+## 측정오류 시뮬레이션 그림
+
+```{r sim-me-plot, eval=FALSE}
+ggplot(me_df, aes(x = x_obs, y = y)) +
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "측정오류가 있는 경우 OLS 관계",
+    x = "관측된 X (오류 포함)",
+    y = "Y"
+  ) +
+  theme_minimal(base_size = 16)
+```
+
+
+## 담배수요 예시
+
+담배수요에 관한 논리를 실증적으로 정리하면 다음과 같다.
+
+1. 담배 가격은 수요와 공급이 동시에 얽혀 있어 내생적일 수 있다.
+2. 세금은 가격을 움직이는 공급 측 또는 정책 변수다.
+3. 세금이 흡연자 개인의 취향이나 오차항과 직접 관련이 없다고 가정하면 도구변수가 될 수 있다.
+4. 그 결과 세금이 유발한 가격 변동만 사용해 가격탄력성을 추정할 수 있다.
+
+
+## 그러나 왜 세금의 외생성은 논쟁적인가?
+
+세금은 가격만이 아니라 다음과도 관련될 수 있다.
+
+- 주별 건강정책 강도
+- 금연 캠페인
+- 흡연에 대한 사회적 태도
+- 인구구성 차이
+
+따라서
+
+> “세금은 수요 오차항과 무관하다”
+
+라는 가정은 자동으로 참이 아니다. 그래서 IV 분석은 항상 **제도적 배경 설명**이 필요하다.
+
+
+## 좋은 도구변수를 찾기 위한 체크리스트
+
+### 이론적 체크
+
+- 왜 $Z$가 $X$를 움직이는가?
+- 왜 $Z$가 $Y$에 직접 영향을 주지 않는가?
+- 제도, 시장구조, 정책설계 측면에서 설명 가능한가?
+
+### 실증적 체크
+
+- 1단계 계수와 F통계량은 충분한가?
+- OLS와 IV 결과 차이는 어떤가?
+- 과식별 검정은 어떤 신호를 주는가?
+- 표본이나 변수정의가 바뀌어도 결과가 유지되는가?
+
+
+## 실전 분석 루틴
+
+1. 왜 내생성이 의심되는지 서술한다.
+2. 내생성의 원인이 누락변수인지, 역인과관계인지, 측정오류인지 구체화한다.
+3. 도구변수 후보의 경제학적 논리를 설명한다.
+4. 1단계 회귀와 산점도로 관련성을 확인한다.
+5. OLS와 IV를 모두 추정하고 비교한다.
+6. weak IV, Wu-Hausman, overidentification 진단을 제시한다.
+7. 외생성 가정이 왜 타당한지 제도적 논증을 덧붙인다.
+
+
+## 자주 하는 실수
+
+- 외생 통제변수를 도구변수식에서 빼먹는다.
+- 1단계 회귀를 보여주지 않는다.
+- 관련성만 확인하고 외생성 논의를 생략한다.
+- OLS와 IV 결과 차이를 기계적으로만 보고 해석한다.
+- weak IV를 무시한 채 IV 결과를 인과효과로 단정한다.
+- 과대식별 검정 결과를 “외생성이 증명되었다”로 과장한다.
+
+
+## 연습문제: 내생성의 원인 구분하기
+
+다음 상황에서 내생성의 원인을 구분해 보자.
+
+1. 교육수준이 임금에 미치는 효과를 추정하는데 능력을 통제하지 못했다.
+2. 가격이 판매량에 미치는 효과를 추정하는데, 판매량이 많을수록 가격도 바뀐다.
+3. 건강상태가 노동시간에 미치는 효과를 추정하는데 건강 변수에 측정오류가 있다.
+
+각각이
+
+- 누락변수,
+- 역인과관계,
+- 측정오류
+
+중 어디에 해당하는지 말해보라.
+
+
+
+## 실전 연습
+
+1. `CigarettesSW`에서 1995년 자료를 불러온다.
+2. `log_packs`, `log_rprice`, `log_rincome`를 만든다.
+3. OLS를 추정한다.
+4. `sales_tax`를 IV로 사용한 2SLS를 추정한다.
+5. 두 결과의 가격계수를 비교한다.
+6. `summary(iv_model, diagnostics = TRUE)`를 해석한다.
+
+
+## IV 회귀분석 요약
+
+- 내생성이 있으면 OLS는 편향되고 비일관적일 수 있다.
+- 도구변수는 내생변수를 움직이되 오차항과 무관해야 한다.
+- 2SLS는 도구변수로부터 예측된 외생적 부분만 사용한다.
+- weak IV, 외생성 위반, 잘못된 식별은 IV 분석 전체를 무너뜨릴 수 있다.
+- 따라서 IV는 코드보다 **식별 논리**가 먼저다.
+

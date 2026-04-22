@@ -1,0 +1,544 @@
+---
+title: "계량경제학 세미나"
+subtitle: "실증분석과 변수 선택"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output: 
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    transition: faster
+---
+
+<style>
+.title-slide hgroup h1 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+.title-slide hgroup h2,
+.title-slide hgroup h3,
+.title-slide p {
+  color: #222 !important;
+}
+slide:not(.title-slide) hgroup {
+  border-bottom: 6px solid transparent;
+  border-image: linear-gradient(to right, #e3c900 0 30%, #8bc34a 30% 70%, #3f6fca 70% 100%) 1;
+  padding-bottom: 8px;
+}
+slide:not(.title-slide) hgroup h2 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+pre.prettyprint {
+  font-size: 0.66em;
+  line-height: 1.22em;
+}
+code {
+  font-size: 0.95em;
+}
+.small {
+  font-size: 0.90em;
+}
+.xsmall {
+  font-size: 0.82em;
+}
+.tiny {
+  font-size: 0.75em;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 4.8,
+  fig.align = "center"
+)
+```
+
+## 패널데이터
+
+- 패널데이터(Panel Data)의 정의
+  - 동일 개체(개인, 기업, 국가 등)를 여러 시점에 걸쳐 추적하여 얻은 데이터
+  - 예시: 기업별 연도별 재무자료, 개인별 매일의 소비패턴, 국가별 연도별 GDP 등
+- 특징
+  - 이질성(heterogeneity) 고려 가능: 개체별/시간별 차이를 반영
+  - 횡단면(cross-sectional) + 시계열(time-series) 정보 동시 활용
+- 일반적인 데이터 유형
+  - 횡단면 데이터: 한 시점에서 여러 개체를 관측(예: 2020년, 100개 기업 재무자료)
+  - 시계열 데이터: 하나(또는 소수)의 개체를 여러 시점에서 관측(예: 어떤 국가의 1990--2020년 GDP 시계열)
+  - 패널데이터: 여러 개체 × 여러 시점으로 확장(예: 100개 기업 × 5년 → 500개 관측치)
+
+## 패널데이터의 특징과 유용성 {.smaller}
+
+- 정보량 증가
+  - 동일 개체에 대해 여러 시점을 관측하므로 표본 크기가 효과적으로 커짐.
+  - 추정량의 효율성(precision) 제고에 유리.
+- 이질성(heterogeneity) 통제
+  - 관측 불가능한 개체 특성(예: 기업 문화, 지리적 조건)을 상수 형태로 모델링(고정효과)하여 통제 가능.
+- 정책효과 추정 용이
+  - 개체별·시간별 변화를 관찰함으로써, 정책 전후 혹은 개혁/충격 전후의 영향 분석에 적합.
+- 다양한 모형 가능
+  - 고정효과 모델, 랜덤효과 모델, 다이나믹 패널 모델(예: Arellano-Bond) 등 다양한 방법론적 확장 가능.
+- 예시 연구 주제
+  - 최저임금 인상이 고용에 미치는 영향(Card & Krueger, 1994)
+  - 교통 정책(예: 톨게이트 요금 인상)이 차량 통행량에 미치는 효과
+  - 기업의 R&D 투자와 기업 성과 간의 관계
+  - 국가 간 제도(민주주의, 교육정도)와 경제성장 간의 상관관계
+
+## 패널데이터의 특징과 유용성
+
+- 패널데이터 시각화 예시
+  - 예: 국가별 GDP 흐름(시계열) vs 국가 간 비교(횡단면)를 동시에 고려
+- 연구 디자인 측면
+  - 패널데이터를 통해 추세(trend)와 단기 변동을 함께 관찰 가능
+  - 단순 횡단면(한 시점)에서는 관측하기 어려운 변화율, 개체별 고정효과 등을 분석할 수 있음
+- 주의점
+  - 자료 수집 과정에서 결측치(missing data), 불균형(unbalanced panel)에 유의해야 함.
+  - 개체 식별자와 시점 변수가 명확히 정의되어야 분석이 용이함.
+
+## 실습을 위한 준비 {.smaller}
+
+- 아래 예제는 모두 학생들이 직접 실행할 수 있도록 구성함.
+- `EmplUK`는 `plm` 패키지에 포함된 내장 데이터이므로 별도 파일이 필요 없음.
+- DID 예제는 외부 파일 대신 수업용 모의(simulated) 데이터를 사용함.
+
+```{r package, eval=FALSE}
+# 처음 1회만 설치
+install.packages(c("plm", "ggplot2", "dplyr", "lmtest", "sandwich"))
+```
+
+```{r}
+library(plm)
+library(ggplot2)
+library(dplyr)
+library(lmtest)
+library(sandwich)
+
+data("EmplUK")
+```
+
+## 패널데이터 구조 확인 {.smaller}
+
+```{r}
+# 패널데이터 구조 살펴보기
+head(EmplUK)
+str(EmplUK)
+
+# 패널데이터 객체 만들기
+emp_panel <- pdata.frame(EmplUK, index = c("firm", "year"))
+
+# 균형 패널인지 확인
+pdim(emp_panel)
+is.pbalanced(emp_panel)
+```
+
+- `firm`: 기업 식별자
+- `year`: 연도(1977--1984)
+- `emp`: 고용인원 수
+- `wage`, `capital`, `output` 등 설명변수 포함
+- 실제 자료에서는 분석 전에 **개체 ID, 시간 변수, 결측치, 균형 여부**를 먼저 점검해야 함.
+
+## 패널데이터 시각화 {.smaller}
+
+```{r panel_visual, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+# 특정 기업만 골라내기
+set.seed(123)
+all_firms  <- unique(EmplUK$firm)
+some_firms <- sample(all_firms, 10)
+subset_data <- subset(EmplUK, firm %in% some_firms)
+
+# 시각화
+ggplot(subset_data,
+       aes(x = year, y = emp,
+           color = factor(firm),
+           group = factor(firm))) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.8) +
+  labs(title = "기업별 연도별 고용 추이 (EmplUK 예시)",
+       x = "연도",
+       y = "고용인원(emp)",
+       color = "기업 ID") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 패널데이터 모형의 큰 그림 {.smaller}
+
+| 모형 | 핵심 아이디어 | 장점 | 한계 |
+|---|---|---|---|
+| Pooled OLS | 패널 구조를 무시하고 모두 합쳐 회귀 | 가장 단순 | 개체별 이질성 무시 |
+| FE | 개체별 고정된 특성을 제거하고 같은 개체 안의 변화로 추정 | 누락된 불변 특성 통제 | 시간불변 변수 추정 불가 |
+| RE | 개체효과를 확률요인으로 보고 추정 | 시간불변 변수도 추정 가능 | 개체효과와 설명변수의 비상관 가정 필요 |
+
+- 패널데이터 수업에서 가장 중요한 질문은 다음과 같음.
+  - 개체 고유 특성을 무시해도 되는가?
+  - 그 개체효과가 설명변수와 상관되어 있는가?
+
+## 고정효과 분석
+
+- 고정효과(FE) 모델 개념
+  - 개체별로 상이한, 그러나 시간에 따라 변하지 않는 특성을 고정효과($\alpha_i$)로 흡수
+  - 전통적 회귀식: $y_{it} = \beta_0 + \beta_1 X_{it} + \varepsilon_{it}$
+  - 개체고정효과 모델: $y_{it} = \alpha_i + \beta_1 X_{it} + \varepsilon_{it}$
+  - $\alpha_i$는 $i$번째 개체가 가지는 고유한 상수항
+- 핵심 아이디어
+  - $\alpha_i$는 측정하기 어려운 개체별 특성(예: 기업가 정신, 소비자 선호, 지역 고유 인프라 등)을 통제하는 역할
+  - 이를 통해 관측되지 않는 이질성이 추정에 미치는 편향을 줄일 수 있음.
+
+## FE는 무엇으로 식별되는가? {.smaller}
+
+- FE 계수는 **개체 간 차이(between variation)**가 아니라 **같은 개체 안의 변화(within variation)**로 식별됨.
+- 해석
+  - “다른 기업과 비교해서 임금이 높은 기업”을 보는 것이 아니라,
+  - “같은 기업에서 시간이 지나며 임금이 변했을 때 고용이 어떻게 변하는가”를 보는 것임.
+- 따라서 FE 추정량은 다음 질문에 답함.
+  - 같은 기업 안에서 `wage`가 증가하면 `emp`는 어떻게 변하는가?
+- 반대로, 시간이 지나도 변하지 않는 변수는 FE에서 추정할 수 없음.
+
+## 고정효과 분석: Within Transformation {.smaller}
+
+- 각 개체별 평균을 빼는 방식으로 $\alpha_i$ 제거
+
+$$
+(y_{it} - \bar{y}_i) = \beta_1 (X_{it} - \bar{X}_i) + (\varepsilon_{it} - \bar{\varepsilon}_i)
+$$
+
+- $\bar{y}_i$는 개체 $i$의 종속변수 평균 / $\bar{X}_i$는 개체 $i$의 독립변수 평균
+- 결과적으로 $\alpha_i$는 평균을 빼는 과정에서 제거됨.
+- 장점
+  - 불변 특성 제거로 인한 내생성(endogeneity) 문제 완화
+- 단점
+  - 시간에 대해 변하지 않는 변수(개체 레벨 상수)는 추정 불가능
+  - 표본이 작으면 비효율성이 생길 수도 있음
+
+## Within variation 예시 {.smaller}
+
+```{r within, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+within_example <- EmplUK %>%
+  group_by(firm) %>%
+  mutate(emp_mean  = mean(emp, na.rm = TRUE),
+         wage_mean = mean(wage, na.rm = TRUE),
+         emp_dm    = emp - emp_mean,
+         wage_dm   = wage - wage_mean) %>%
+  ungroup()
+
+head(within_example %>%
+       select(firm, year, emp, emp_mean, emp_dm, wage, wage_mean, wage_dm))
+```
+
+- `emp_dm`, `wage_dm`는 각각 개체 평균을 뺀 값임.
+- FE는 사실상 이 **demeaned data**를 이용해 계수를 추정한다고 이해하면 됨.
+
+## Pooled OLS, FE, RE 비교 예시 {.smaller}
+
+```{r pooled, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+# Pooled OLS
+model_pool <- plm(emp ~ wage + capital + output,
+                  data = emp_panel,
+                  model = "pooling")
+
+# Fixed Effects
+model_fe <- plm(emp ~ wage + capital + output,
+                data = emp_panel,
+                model = "within",
+                effect = "individual")
+
+# Random Effects
+model_re <- plm(emp ~ wage + capital + output,
+                data = emp_panel,
+                model = "random",
+                effect = "individual")
+
+summary(model_pool)
+summary(model_fe)
+summary(model_re)
+```
+
+## 랜덤효과(RE)의 직관 {.smaller}
+
+- RE 모델은 개체효과를 제거하지 않고 확률적 요소의 일부로 다룸.
+- 핵심 가정
+  - 개체효과 $\alpha_i$가 설명변수 $X_{it}$와 상관되지 않음.
+- 따라서 RE는 다음 상황에서 유리할 수 있음.
+  - 시간불변 변수도 추정하고 싶을 때
+  - 개체효과와 설명변수의 상관이 크지 않다고 볼 수 있을 때
+- 하지만 이 가정이 틀리면 RE 추정량은 편향될 수 있음.
+
+## 시간고정효과 분석 {.smaller}
+
+- 특정 연도(또는 특정 시점)에 나타나는 공통 충격을 고려하고자 할 때 시간고정효과($\gamma_t$) 추가
+- 식: $y_{it} = \alpha_i + \gamma_t + \beta_1 X_{it} + \varepsilon_{it}$
+- $\gamma_t$: 모든 개체에 동일하게 작용하는 시점별 효과
+- Two-way Fixed Effects
+  - 개체 고정효과 + 시간 고정효과를 동시에 모델에 포함
+  - 예: 기업별 차이 + 연도별 차이를 모두 흡수
+- 응용 예시
+  - 경기순환, 연도별 거시충격, 제도 변화 등의 공통요인을 통제 가능
+
+## FE와 1차 차분(first difference) {.smaller}
+
+- 고정효과를 제거하는 또 다른 방법은 **1차 차분**임.
+
+$$
+\Delta y_{it} = \beta_1 \Delta X_{it} + \Delta \varepsilon_{it}
+$$
+
+- FE와 1차 차분은 모두 시간불변 개체효과를 제거함.
+- 특히 시점이 2개뿐인 경우 FE와 차분은 매우 유사한 결과를 줌.
+- 차분은 “전기 대비 변화” 해석이 직관적이라는 장점이 있음.
+
+```{r fe_dif, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+model_fd <- plm(emp ~ wage + capital + output,
+                data = emp_panel,
+                model = "fd")
+summary(model_fd)
+```
+
+## 고정효과 회귀분석의 표준오차 {.smaller}
+
+- 패널데이터에서는 다음과 같은 오차항 구조 문제가 자주 발생
+  - 개체 내 자기상관(serial correlation)
+  - 이분산성(heteroskedasticity)
+  - 그룹 간 상관(cross-sectional correlation)
+- 단순 OLS의 기본 가정이 깨지면 유의통계량과 $p$-value가 왜곡될 수 있음.
+- 따라서 패널 회귀에서는 **강건한 표준오차**를 함께 제시하는 것이 중요함.
+
+## 고정효과 회귀분석의 표준오차 예시 {.smaller}
+
+```{r fe_se, eval=FALSE}
+# Two-way FE
+model_twfe <- plm(emp ~ wage + capital + output,
+                  data = emp_panel,
+                  model = "within",
+                  effect = "twoways")
+
+# 개체 단위 클러스터 표준오차
+coeftest(model_twfe,
+         vcov = vcovHC(model_twfe,
+                       method = "arellano",
+                       type = "HC1",
+                       cluster = "group"))
+```
+
+- 경제학 실증에서는 보통 기본 `summary()` 결과만 보지 않고, 클러스터 표준오차 결과를 함께 확인함.
+
+## 모형 선택: 어떤 순서로 판단하는가? {.smaller}
+
+1. 패널 구조 확인: ID, time, 결측치, 균형 여부
+2. pooled OLS 적합
+3. FE가 필요한지 `pFtest()`로 확인
+4. RE와 FE를 `phtest()`로 비교(Hausman 검정)
+5. 최종 모형에 강건한 표준오차 적용
+
+- 실제 논문에서는 이론적 타당성과 실증 검정을 함께 고려함.
+
+## 고정효과의 유의성 검정 {.smaller}
+
+```{r fe_sig, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+# 풀드 OLS (고정효과 없음)
+model_pool <- plm(emp ~ wage + capital + output,
+                  data = emp_panel,
+                  model = "pooling")
+
+# 개체 고정효과 모델
+model_fe <- plm(emp ~ wage + capital + output,
+                data = emp_panel,
+                model = "within",
+                effect = "individual")
+
+# FE가 pooled OLS보다 나은지 검정
+pFtest(model_fe, model_pool)
+```
+
+- $p$값이 충분히 작으면, 개체별 고정효과가 존재한다고 보고 FE를 고려할 수 있음.
+
+## 시간고정효과의 유의성 검정 {.smaller}
+
+```{r tfe_sig, eval=FALSE}
+# 개체 + 시간 고정효과 모델
+model_twfe <- plm(emp ~ wage + capital + output,
+                  data = emp_panel,
+                  model = "within",
+                  effect = "twoways")
+
+# 시간효과의 추가적 유의성 검정
+pFtest(model_twfe, model_fe)
+```
+
+- “개체 FE만 있는 모델”과 “개체 + 시간 FE 모델”을 비교함.
+- $p$값이 작으면 시간효과도 중요하다고 볼 수 있음.
+
+## Hausman 검정 {.smaller}
+
+- Hausman 검정의 핵심 질문
+  - “RE의 비상관 가정이 타당한가?”
+- 귀무가설($H_0$)
+  - RE 추정량이 일관적이며 FE와 체계적으로 다르지 않음.
+- 대립가설($H_1$)
+  - RE의 가정이 성립하지 않아 FE를 선호해야 함.
+
+```{r}
+phtest(model_fe, model_re)
+```
+
+- 일반적으로 $p$값이 작으면 RE보다 FE를 더 신뢰하는 쪽으로 해석함.
+
+## DID와 패널데이터 {.smaller}
+
+- Difference-in-Differences(DID)는 패널데이터의 대표적인 정책효과 분석 설계임.
+- 가장 기본적인 DID 회귀식
+
+$$
+y_{it} = \alpha_i + \gamma_t + \beta (Treat_i \times Post_t) + \varepsilon_{it}
+$$
+
+- 여기서 관심 계수는 $\beta$이며, “처리집단의 사후 변화가 통제집단의 사후 변화보다 얼마나 더 컸는가”를 의미함.
+- **중요:** DID가 인과효과처럼 해석되려면 평행추세(parallel trends) 가정이 필요함.
+
+## DID 예제 데이터 만들기 {.smaller}
+
+```{r did_ex, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+set.seed(2026)
+
+n_store <- 80
+id <- 1:n_store
+state <- rep(c("NJ", "PA"), each = n_store / 2)
+store_fe <- rnorm(n_store, mean = 20, sd = 3)
+
+# 2시점 패널 만들기
+sim_did <- expand.grid(store = id, time = c(0, 1)) %>%
+  arrange(store, time) %>%
+  mutate(state   = rep(state, each = 2),
+         treated = ifelse(state == "NJ", 1, 0),
+         post    = time,
+         did     = treated * post,
+         alpha_i = rep(store_fe, each = 2),
+         # 공통 시간효과 + 정책효과 1.5 부여
+         emp     = alpha_i + 0.8 * post + 1.5 * did + rnorm(n(), 0, 1.2))
+
+head(sim_did)
+```
+
+## DID 시각화 {.smaller}
+
+```{r did_vis, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+did_plot <- sim_did %>%
+  group_by(state, time) %>%
+  summarise(mean_emp = mean(emp), .groups = "drop")
+
+ggplot(did_plot, aes(x = time, y = mean_emp, color = state, group = state)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = c(0, 1), labels = c("사전", "사후")) +
+  labs(title = "DID 예제: 처리집단과 통제집단의 평균 고용 변화",
+       x = "시점",
+       y = "평균 고용",
+       color = "주") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## DID 회귀분석: OLS와 TWFE {.smaller}
+
+```{r did_reg, eval=FALSE}
+# 단순 DID 회귀
+mod_did_lm <- lm(emp ~ treated + post + did, data = sim_did)
+summary(mod_did_lm)
+
+# 패널 데이터화
+sim_panel <- pdata.frame(sim_did, index = c("store", "time"))
+
+# TWFE DID: treated, post는 FE에 의해 흡수되므로 did만 남음
+mod_did_twfe <- plm(emp ~ did,
+                    data = sim_panel,
+                    model = "within",
+                    effect = "twoways")
+summary(mod_did_twfe)
+
+# 클러스터 표준오차
+coeftest(mod_did_twfe,
+         vcov = vcovHC(mod_did_twfe,
+                       method = "arellano",
+                       type = "HC1",
+                       cluster = "group"))
+```
+
+## DID 해석에서 주의할 점 {.smaller}
+
+- `treated`는 시간불변 변수이므로 개체 FE와 함께 쓰면 별도로 추정되지 않음.
+- `post`는 모든 개체에 공통인 시간변수이므로 시간 FE와 함께 쓰면 별도로 추정되지 않음.
+- Two-way FE DID에서는 보통 핵심 상호작용항 `did = treated × post`가 정책효과를 식별함.
+- 단, 이 계수를 인과효과로 해석하려면 **평행추세 가정**이 필요함.
+
+## 실증분석: 영국의 고용효과 분석 {.smaller}
+
+- 영국 제조업체들을 대상으로 한 패널데이터인 `EmplUK`를 사용
+- 변수 구성
+  - `firm`: 기업 식별자
+  - `year`: 연도
+  - `emp`: 고용인원 수
+  - `wage`: 임금 관련 지표
+  - `capital`: 자본투자 지표
+  - `output`: 산출(생산량)
+- 관측치는 불균형 패널이며, 기업별·연도별 차이가 함께 존재함.
+
+## 실증분석: EmplUK로 FE 추정 {.smaller}
+
+```{r empluk, echo=TRUE, results='hide', fig.show='hide', message=FALSE, warning=FALSE}
+# 개체 고정효과 모델
+fe_model <- plm(emp ~ wage + capital + output,
+                data = emp_panel,
+                model = "within",
+                effect = "individual")
+
+# 개체 + 시간 고정효과 모델
+twfe_model <- plm(emp ~ wage + capital + output,
+                  data = emp_panel,
+                  model = "within",
+                  effect = "twoways")
+
+summary(fe_model)
+summary(twfe_model)
+```
+
+## 실증분석: EmplUK 표준오차 보정 {.smaller}
+
+```{r}
+coeftest(twfe_model,
+         vcov = vcovHC(twfe_model,
+                       method = "arellano",
+                       type = "HC1",
+                       cluster = "group"))
+```
+
+- 결과 해석
+  - `wage` 계수가 음수이면, 같은 기업 안에서 임금이 높아질수록 고용이 줄어드는 경향을 시사
+  - `capital`, `output` 계수가 양수이면 자본과 생산이 증가할수록 고용이 늘어나는 경향을 시사
+  - TWFE는 기업별 특성과 연도별 공통충격을 모두 통제한 결과임
+
+## 패널데이터 회귀분석 주의 사항 {.smaller}
+
+- 계수 해석
+  - FE 계수는 “개체 내부 변화”에 대한 효과임을 항상 강조해야 함.
+- 모형 진단
+  - 표준오차 조정 필요
+  - 잔차 분석, 자기상관, 이분산성 점검 필요
+- 자료 구조
+  - 결측치와 불균형 패널 여부를 먼저 점검
+- 모형 선택
+  - pooled OLS, FE, RE를 비교하고 검정을 병행
+- 확장 가능성
+  - 동태적 패널, 비선형 패널, 패널 DID 등으로 확장 가능
+
+## 요약 {.smaller}
+
+1. 패널데이터는 같은 개체를 여러 시점에 걸쳐 관찰한 자료이다.
+2. FE는 개체 내부 변화(within variation)로 계수를 식별한다.
+3. 시간불변 변수는 FE에서 추정할 수 없다.
+4. 패널 회귀에서는 강건한 표준오차가 중요하다.
+5. RE는 편리하지만 개체효과와 설명변수의 비상관 가정이 필요하다.
+6. DID는 패널데이터의 대표적 응용이며, 평행추세 가정이 핵심이다.
+7. 실증에서는 `pFtest()`, `phtest()`, 클러스터 표준오차를 함께 보는 습관이 중요하다.
