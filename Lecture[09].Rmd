@@ -1,0 +1,856 @@
+---
+title: "계량경제학 세미나"
+subtitle: "다변량 시계열과 VAR: 예측, 충격반응, 구조적 식별"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output:
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    self_contained: true
+    fig_caption: true
+    transition: faster
+    df_print: paged
+fontsize: 11pt
+---
+
+<style>
+.title-slide hgroup h1 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+.title-slide hgroup h2,
+.title-slide hgroup h3,
+.title-slide p {
+  color: #222 !important;
+}
+slide:not(.title-slide) hgroup {
+  border-bottom: 6px solid transparent;
+  border-image: linear-gradient(to right, #e3c900 0 30%, #8bc34a 30% 70%, #3f6fca 70% 100%) 1;
+  padding-bottom: 8px;
+}
+slide:not(.title-slide) hgroup h2 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+pre.prettyprint {
+  font-size: 0.66em;
+  line-height: 1.22em;
+}
+code {
+  font-size: 0.95em;
+}
+.small {
+  font-size: 0.90em;
+}
+.xsmall {
+  font-size: 0.82em;
+}
+.tiny {
+  font-size: 0.75em;
+}
+</style>
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7.5,
+  fig.height = 4.5,
+  fig.align = "center",
+  comment = "#>"
+)
+```
+
+## 수업의 목표
+
+- 동태적 인과효과와 다변량 시계열 분석이 왜 필요한지 이해한다.
+- VAR 모형이 무엇이고, 어떤 상황에서 유용한지 설명할 수 있다.
+- VAR의 추정, 시차 선택, 안정성, 잔차 진단을 수행할 수 있다.
+- VAR 결과에서 Granger 인과성, 예측, IRF, FEVD를 해석할 수 있다.
+- 축약형 VAR과 structural VAR의 차이를 이해한다.
+- 경제학에서 중요한 identification 문제가 무엇인지 이해한다.
+- Cholesky ordering, orthogonal IRF, structural shock의 의미를 예제로 학습한다.
+
+## 왜 다변량 시계열인가?
+
+- 경제 변수들은 보통 서로 영향을 주고받는다.
+  - 금리 인상은 생산과 물가에 영향을 줄 수 있다.
+  - 경기 둔화는 중앙은행의 금리 결정에 영향을 줄 수 있다.
+  - 물가 상승은 임금, 소비, 실질금리와 연결된다.
+- 단일 시계열 모형은 한 변수의 과거만 사용한다.
+- 다변량 시계열 모형은 여러 변수의 과거 정보를 함께 사용한다.
+- VAR은 그중 가장 기본적이고 널리 쓰이는 출발점이다.
+
+## 예측과 정책 충격 분석의 차이
+
+- 예측:
+  - 미래 값을 잘 맞추는 것이 목적이다.
+  - 계수의 인과적 해석이 반드시 필요하지 않다.
+  - 축약형 VAR만으로도 충분한 경우가 많다.
+- 정책 충격 분석:
+  - 특정 정책 또는 구조적 충격의 효과를 알고 싶다.
+  - 예: 예상치 못한 금리 인상이 GDP와 물가에 미치는 효과.
+  - 이때는 충격을 식별해야 한다.
+- 핵심:
+  - VAR은 예측 도구이면서, 식별 제약을 추가하면 정책 분석 도구가 된다.
+
+## VAR 모형이란?
+
+- VAR(Vector Autoregression)은 여러 시계열 변수의 자기회귀모형이다.
+- 각 변수는 자기 자신의 과거값과 다른 변수들의 과거값에 의해 설명된다.
+- 모든 변수를 우선 내생변수로 취급한다.
+- 예:
+  - GDP 성장률, 인플레이션, 금리
+  - 주가, 환율, 금리
+  - 실업률, 임금상승률, 생산성
+
+## VAR(p)의 일반형
+
+- $K$개의 변수를 가진 벡터를 $\mathbf{y}_t$라고 하자.
+
+$$
+\mathbf{y}_t =
+\mathbf{c}
++ A_1\mathbf{y}_{t-1}
++ A_2\mathbf{y}_{t-2}
++ \cdots
++ A_p\mathbf{y}_{t-p}
++ \mathbf{u}_t
+$$
+
+- $\mathbf{y}_t$: $K \times 1$ 변수 벡터.
+- $\mathbf{c}$: 상수항 벡터.
+- $A_j$: $K \times K$ 계수 행렬.
+- $\mathbf{u}_t$: 축약형 오차항.
+
+## 두 변수 VAR(1)
+
+$$
+\begin{aligned}
+y_t &= c_1+a_{11}y_{t-1}+a_{12}x_{t-1}+u_{1t} \\
+x_t &= c_2+a_{21}y_{t-1}+a_{22}x_{t-1}+u_{2t}
+\end{aligned}
+$$
+
+- $a_{11}$, $a_{22}$: 자기 시차 효과.
+- $a_{12}$, $a_{21}$: 교차 시차 효과.
+- $u_{1t}$와 $u_{2t}$는 같은 시점에 상관될 수 있다.
+- 이 동시적 상관 때문에 구조적 충격 식별 문제가 생긴다.
+
+## VAR이 필요한 상황
+
+- 변수 간 피드백이 중요할 때:
+  - 금리와 인플레이션
+  - 성장률과 실업률
+  - 환율과 물가
+- 동태적 파급효과가 궁금할 때:
+  - 한 변수의 충격이 다른 변수에 몇 기간 동안 영향을 주는가?
+- 예측에 여러 변수의 과거 정보가 필요할 때:
+  - 장단기 금리차가 성장률 예측에 도움이 되는가?
+- 정책 실험의 기초가 필요할 때:
+  - 통화정책 충격, 재정정책 충격, 유가 충격.
+
+## VAR 사용 전 점검
+
+- 자료의 빈도와 표본 기간이 동일해야 한다.
+- 변수는 보통 정상적이어야 한다.
+  - 수준, 로그, 차분, 성장률 중 무엇을 사용할지 결정한다.
+- 변수 수를 지나치게 늘리지 않는다.
+  - 계수 수가 빠르게 증가한다.
+- 시차 길이를 선택한다.
+- 안정성 조건과 잔차 진단을 확인한다.
+- 정책 충격 분석에서는 식별 전략을 명확히 적어야 한다.
+
+## 계수 수의 증가
+
+- VAR($p$)에서 각 방정식에는 $Kp$개의 시차 계수와 상수항이 들어간다.
+- 전체 계수 수는 대략 $K(Kp+1)$개이다.
+- 예:
+  - $K=3$, $p=4$: $3(12+1)=39$개.
+  - $K=7$, $p=4$: $7(28+1)=203$개.
+- 변수와 시차가 많아질수록 과적합과 추정 불확실성이 커진다.
+
+## R 실습 준비
+
+```{r packages, eval=FALSE}
+# 처음 한 번만 설치
+install.packages(c("vars", "urca", "forecast", "ggplot2", "dplyr"))
+
+library(vars)
+library(urca)
+library(forecast)
+library(ggplot2)
+library(dplyr)
+```
+
+## 예제 자료: Canada
+
+- `vars` 패키지의 `Canada` 자료를 사용한다.
+- 네 개의 분기별 캐나다 거시경제 변수:
+  - `e`: employment
+  - `prod`: productivity
+  - `rw`: real wage
+  - `U`: unemployment rate
+- 실제 정책 분석에서는 변수 정의, 단위, 계절조정 여부, 표본 기간을 반드시 확인해야 한다.
+
+```{r canada-data, eval=FALSE}
+data("Canada", package = "vars")
+canada <- Canada
+
+head(canada)
+summary(canada)
+plot(canada)
+```
+
+## 정상성 확인
+
+- VAR은 일반적으로 정상 변수 또는 안정적인 변환 변수에 적용한다.
+- 단위근이 강하게 의심되면:
+  - 로그 차분
+  - 성장률
+  - 차분
+  - 공적분이 있을 경우 VECM
+
+```{r stationarity-check, eval=FALSE}
+apply(canada, 2, function(z) {
+  summary(ur.df(z, type = "trend", lags = 4))@teststat
+})
+
+apply(diff(canada), 2, function(z) {
+  summary(ur.df(z, type = "drift", lags = 4))@teststat
+})
+```
+
+## 시차 길이 선택
+
+- 너무 짧은 시차:
+  - 중요한 동태 구조를 누락한다.
+  - 잔차 자기상관이 남을 수 있다.
+- 너무 긴 시차:
+  - 계수가 많아지고 예측 분산이 커진다.
+  - 자유도가 줄어든다.
+- 실무에서는 AIC, HQ, SC/BIC, FPE를 함께 보고 결정한다.
+
+```{r varselect, eval=FALSE}
+VARselect(canada, lag.max = 8, type = "const")
+```
+
+## VAR 추정
+
+- VAR은 각 방정식을 OLS로 추정할 수 있다.
+- 모든 방정식이 같은 설명변수 집합을 가지므로 방정식별 OLS가 자연스럽다.
+- `vars::VAR()`은 추정, 진단, 예측, IRF, FEVD를 연결해서 수행할 수 있다.
+
+```{r var-estimation, eval=FALSE}
+fit_var <- VAR(canada, p = 2, type = "const")
+summary(fit_var)
+```
+
+## VAR 결과 읽기
+
+- 각 방정식은 하나의 종속변수에 대한 회귀식이다.
+- 계수 해석:
+  - `e.l1`: 고용의 1기 시차가 현재 종속변수에 미치는 예측 관계.
+  - `U.l2`: 실업률의 2기 시차가 현재 종속변수에 미치는 예측 관계.
+- 주의:
+  - 개별 계수 하나를 구조적 인과효과로 해석하지 않는다.
+  - VAR 계수는 전체 동태 시스템 안에서 해석해야 한다.
+
+## 안정성 조건
+
+- VAR이 안정적이면 충격의 효과가 시간이 지나며 사라진다.
+- 안정성은 companion matrix의 고유근이 단위원 안에 있는지 확인한다.
+- `vars` 패키지의 `roots()`는 고유근의 절댓값을 확인한다.
+- 모든 값이 1보다 작으면 안정적이다.
+
+```{r var-stability, eval=FALSE}
+roots(fit_var)
+plot(roots(fit_var), main = "Roots of VAR")
+```
+
+## 잔차 진단
+
+- VAR 잔차는 백색잡음에 가까워야 한다.
+- 확인할 것:
+  - 잔차 자기상관
+  - 이분산성
+  - 정규성
+  - 구조적 단절
+- 잔차 자기상관이 남으면 시차 길이를 늘리거나 변수 변환을 재검토한다.
+
+```{r var-diagnostics, eval=FALSE}
+serial.test(fit_var, lags.pt = 12, type = "PT.asymptotic")
+arch.test(fit_var, lags.multi = 5)
+normality.test(fit_var)
+plot(fit_var)
+```
+
+## Granger 인과성
+
+- $X$가 $Y$를 Granger-cause 한다는 말은:
+  - $Y$의 과거값을 통제한 뒤에도
+  - $X$의 과거값이 $Y$ 예측에 추가 정보를 제공한다는 뜻이다.
+- 이것은 예측 가능성에 관한 개념이다.
+- 철학적 또는 정책적 인과성을 의미하지 않는다.
+
+$$
+H_0:\text{X의 모든 시차 계수}=0
+$$
+
+## Granger 인과성 예제
+
+```{r granger-causality, eval=FALSE}
+causality(fit_var, cause = "U")
+causality(fit_var, cause = "prod")
+```
+
+- 해석:
+  - p-value가 작으면 해당 변수의 과거값이 시스템의 다른 변수를 예측하는 데 유용하다고 본다.
+  - 단, 이는 구조적 충격의 인과효과와 다르다.
+
+## VAR 예측
+
+- 반복적 VAR 예측:
+  - 1기 앞 예측을 만든 뒤, 그 예측값을 다음 단계 예측에 사용한다.
+  - 단기 예측 모형으로 장기 예측을 순차적으로 만든다.
+- 장점:
+  - VAR 구조와 일관된 다기간 예측을 제공한다.
+- 단점:
+  - 예측 기간이 길어질수록 오차가 누적될 수 있다.
+
+```{r var-forecast, eval=FALSE}
+fcst <- predict(fit_var, n.ahead = 8, ci = 0.95)
+plot(fcst)
+```
+
+## 직접 다기간 예측
+
+- 직접 예측은 각 예측 시점 $h$마다 별도의 모형을 추정한다.
+- 예:
+
+$$
+Y_{t+h} = \alpha_h + B_{1h}\mathbf{y}_t + \cdots + B_{ph}\mathbf{y}_{t-p+1}+e_{t+h}
+$$
+
+- 장점:
+  - 특정 예측 지평에 최적화된다.
+- 단점:
+  - $h$마다 모형을 따로 추정해야 한다.
+  - 표본이 작으면 불안정할 수 있다.
+
+## IRF의 직관
+
+- 충격반응함수(IRF)는 한 변수에 충격이 발생했을 때 시스템의 변수들이 시간에 따라 어떻게 반응하는지를 보여준다.
+- 질문:
+  - 실업률 충격이 고용에 몇 분기 동안 영향을 주는가?
+  - 금리 충격이 물가와 생산을 얼마나 늦게 움직이는가?
+  - 생산성 충격의 효과는 일시적인가, 지속적인가?
+- IRF는 동태적 효과를 그림으로 해석하게 해주는 도구이다.
+
+## VAR의 MA 표현
+
+- 안정적인 VAR은 무한 이동평균 형태로 쓸 수 있다.
+
+$$
+\mathbf{y}_t = \boldsymbol{\mu}
++ \mathbf{u}_t
++ \Phi_1\mathbf{u}_{t-1}
++ \Phi_2\mathbf{u}_{t-2}
++ \cdots
+$$
+
+- $\Phi_h$는 $h$기 전 충격이 현재 변수에 미치는 영향을 나타낸다.
+- IRF는 이 계수 행렬들의 시간 경로를 보는 것이다.
+
+## 축약형 충격의 문제
+
+- 축약형 잔차 $\mathbf{u}_t$는 서로 상관될 수 있다.
+
+$$
+E(\mathbf{u}_t\mathbf{u}_t')=\Sigma_u
+$$
+
+- 예:
+  - 금리 방정식 잔차와 물가 방정식 잔차가 같은 시점에 함께 움직일 수 있다.
+- 따라서 `금리 방정식 잔차가 1만큼 증가`를 순수한 통화정책 충격으로 해석하기 어렵다.
+- 정책 충격을 해석하려면 서로 독립적인 구조적 충격을 식별해야 한다.
+
+## Orthogonal IRF
+
+- Orthogonal IRF는 서로 상관된 축약형 잔차를 서로 직교하는 충격으로 변환한 뒤 계산한 IRF이다.
+- 가장 흔한 방법은 Cholesky 분해이다.
+
+$$
+\Sigma_u = PP'
+$$
+
+- $P$는 하삼각 행렬이다.
+- 축약형 오차는 다음처럼 구조적 충격으로 표현된다.
+
+$$
+\mathbf{u}_t=P\boldsymbol{\varepsilon}_t,\quad
+E(\boldsymbol{\varepsilon}_t\boldsymbol{\varepsilon}_t')=I
+$$
+
+## 왜 Orthogonal IRF가 필요한가?
+
+- 축약형 잔차들은 동시적으로 상관되어 있다.
+- IRF에서 한 변수의 충격만 따로 주려면 충격들이 서로 독립이어야 한다.
+- Orthogonal IRF는 다음 질문에 답한다.
+  - 다른 구조적 충격과 독립인 하나의 충격이 발생하면 어떻게 되는가?
+- 하지만 Cholesky 방식은 변수 순서에 민감하다.
+- 따라서 ordering은 경제이론과 제도적 지식에 근거해야 한다.
+
+## Cholesky Ordering
+
+- Cholesky ordering은 앞에 놓인 변수가 같은 시점에서 더 외생적이라고 가정한다.
+- 첫 번째 변수:
+  - 같은 시점의 다른 변수 충격에 반응하지 않는다.
+- 중간 변수:
+  - 앞 변수의 동시적 충격에는 반응하지만 뒤 변수에는 반응하지 않는다.
+- 마지막 변수:
+  - 앞의 모든 변수의 동시적 충격에 반응할 수 있다.
+- 순서가 바뀌면 orthogonal IRF도 바뀔 수 있다.
+
+## 통화정책 예시의 Ordering
+
+- 분기 거시 VAR 예:
+
+$$
+\mathbf{y}_t = (output_t,\ inflation_t,\ policy\ rate_t)'
+$$
+
+- 흔한 재귀적 식별 가정:
+  - 생산과 물가는 같은 분기 안에 정책금리에 즉각 반응하지 않는다.
+  - 중앙은행은 같은 분기 생산과 물가 정보를 보고 금리를 조정할 수 있다.
+- 이 경우 ordering:
+
+$$
+output \rightarrow inflation \rightarrow policy\ rate
+$$
+
+- policy rate shock은 생산과 물가를 통제한 뒤의 예상치 못한 금리 변화로 해석한다.
+
+## Ordering 선택의 원칙
+
+- 데이터 빈도를 고려한다.
+  - 월별 자료와 분기별 자료의 동시 반응 가정은 다를 수 있다.
+- 제도적 정보를 사용한다.
+  - 중앙은행 의사결정 시점, 자료 발표 지연, 정책 집행 지연.
+- 선행 연구의 표준을 참고한다.
+- 민감도 분석을 한다.
+  - 여러 ordering에서 IRF가 유지되는지 확인한다.
+- 식별 가정은 결과표보다 먼저 설명되어야 한다.
+
+## Orthogonal IRF 예제
+
+```{r orthogonal-irf, eval=FALSE}
+irf_u_to_e <- irf(
+  fit_var,
+  impulse = "U",
+  response = "e",
+  n.ahead = 12,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(irf_u_to_e)
+```
+
+- 해석:
+  - 실업률 충격이 고용에 미치는 동태적 반응을 본다.
+  - 0을 포함하지 않는 신뢰구간은 해당 지평에서 통계적으로 뚜렷한 반응을 시사한다.
+
+## IRF 해석 방법
+
+- impulse:
+  - 어떤 충격을 주는가?
+- response:
+  - 어떤 변수의 반응을 보는가?
+- horizon:
+  - 충격 후 몇 기간까지 보는가?
+- 크기:
+  - 보통 1 표준편차 충격에 대한 반응이다.
+- 지속성:
+  - 반응이 몇 기간 후 0으로 돌아오는가?
+- 부호:
+  - 경제이론과 일치하는가?
+
+## IRF 해석 시 주의점
+
+- IRF는 추정 불확실성을 가진다.
+- confidence band를 함께 봐야 한다.
+- ordering에 민감할 수 있다.
+- 변수 변환에 따라 단위가 달라진다.
+  - 로그 차분이면 성장률 반응.
+  - 수준이면 수준 변화.
+- 안정적이지 않은 VAR의 IRF는 해석하기 어렵다.
+
+## FEVD의 직관
+
+- 예측오차 분산분해(FEVD)는 특정 변수의 예측오차 분산이 어떤 충격들에 의해 얼마나 설명되는지 보여준다.
+- 질문:
+  - 고용 예측오차의 몇 퍼센트가 실업률 충격 때문인가?
+  - 장기 예측오차에서 생산성 충격의 중요성이 커지는가?
+- IRF가 충격의 시간 경로라면, FEVD는 충격의 상대적 중요도이다.
+
+## FEVD 예제
+
+```{r fevd-example, eval=FALSE}
+fevd_fit <- fevd(fit_var, n.ahead = 12)
+fevd_fit
+plot(fevd_fit)
+```
+
+- 해석:
+  - 각 horizon에서 예측오차 분산의 합은 1이다.
+  - 특정 충격의 비중이 커질수록 그 충격이 예측 불확실성에서 중요하다.
+
+## FEVD 해석 방법
+
+- 짧은 horizon:
+  - 자기 자신의 충격이 큰 비중을 차지하는 경우가 많다.
+- 긴 horizon:
+  - 변수 간 동태적 연결이 누적되어 다른 변수의 충격 비중이 커질 수 있다.
+- 정책적 해석:
+  - 어떤 구조적 충격이 경기변동의 주요 원인인지 판단하는 데 활용한다.
+- 주의:
+  - Cholesky FEVD도 ordering에 민감하다.
+
+## 축약형 VAR과 SVAR
+
+- 축약형 VAR:
+
+$$
+\mathbf{y}_t =
+\mathbf{c}
++ A_1\mathbf{y}_{t-1}
++ \cdots
++ A_p\mathbf{y}_{t-p}
++ \mathbf{u}_t
+$$
+
+- SVAR:
+
+$$
+A\mathbf{y}_t =
+\mathbf{a}
++ A_1^*\mathbf{y}_{t-1}
++ \cdots
++ A_p^*\mathbf{y}_{t-p}
++ B\boldsymbol{\varepsilon}_t
+$$
+
+- SVAR은 경제이론 기반 제약을 통해 구조적 충격 $\boldsymbol{\varepsilon}_t$를 식별한다.
+
+## 구조적 충격이란?
+
+- 구조적 충격은 경제적으로 이름 붙일 수 있는 원천적 충격이다.
+- 예:
+  - 통화정책 충격
+  - 총수요 충격
+  - 총공급 충격
+  - 유가 충격
+  - 금융불안 충격
+- 축약형 잔차는 방정식의 예측오차이다.
+- 구조적 충격은 경제 이론을 통해 분리한 독립적 충격이다.
+
+## Identification 문제
+
+- 축약형 VAR을 추정하면 $\Sigma_u$는 알 수 있다.
+- 하지만 구조적 충격의 행렬은 직접 알 수 없다.
+- $K$개 변수의 공분산 행렬은 $K(K+1)/2$개의 고유한 정보를 준다.
+- 구조적 충격 행렬에는 더 많은 미지수가 있다.
+- 따라서 추가 제약이 필요하다.
+- 이 추가 제약이 identification이다.
+
+## SVAR 식별 방식
+
+- 단기 제약:
+  - 특정 변수는 같은 시점의 특정 충격에 즉각 반응하지 않는다고 가정.
+- 장기 제약:
+  - 특정 충격은 장기적으로 특정 변수에 영향을 주지 않는다고 가정.
+- 부호 제약:
+  - 충격 후 일정 기간 반응의 부호를 제한.
+- 외부 도구변수:
+  - 구조적 충격과 상관되지만 다른 충격과는 무관한 외생 변수를 사용.
+- 통계적 식별:
+  - 비정규성, 독립성 등 통계적 특성을 이용.
+
+## 단기 제약 SVAR
+
+- 가장 많이 쓰는 방식 중 하나는 동시적 관계에 0 제약을 주는 것이다.
+- 예:
+  - 생산은 같은 분기 금리 충격에 즉시 반응하지 않는다.
+  - 물가는 같은 분기 금리 충격에 즉시 반응하지 않는다.
+  - 금리는 같은 분기 생산과 물가에 반응할 수 있다.
+- 이 가정은 Cholesky ordering으로 구현될 수 있다.
+- 단기 제약은 자료 빈도와 경제제도에 맞아야 한다.
+
+## Cholesky 식별의 행렬 표현
+
+- 축약형 오차 공분산:
+
+$$
+\Sigma_u =
+\begin{pmatrix}
+\sigma_{11} & \sigma_{12} & \sigma_{13} \\
+\sigma_{12} & \sigma_{22} & \sigma_{23} \\
+\sigma_{13} & \sigma_{23} & \sigma_{33}
+\end{pmatrix}
+$$
+
+- Cholesky 분해:
+
+$$
+\Sigma_u = PP',
+\quad
+P =
+\begin{pmatrix}
+p_{11} & 0 & 0 \\
+p_{21} & p_{22} & 0 \\
+p_{31} & p_{32} & p_{33}
+\end{pmatrix}
+$$
+
+- 이 하삼각 구조가 재귀적 단기 제약을 의미한다.
+
+## SVAR 추정 예제
+
+```{r svar-example, eval=FALSE}
+# vars::SVAR()에서 NA는 추정할 모수, 0은 제약을 뜻한다.
+# 예시는 4변수 Canada 자료에 재귀적 A 행렬 제약을 부여한다.
+
+A_mat <- diag(4)
+A_mat[lower.tri(A_mat)] <- NA
+colnames(A_mat) <- rownames(A_mat) <- colnames(canada)
+
+svar_fit <- SVAR(fit_var, estmethod = "direct", Amat = A_mat)
+summary(svar_fit)
+```
+
+- 주의:
+  - 이 예제의 ordering은 교육용이다.
+  - 실제 연구에서는 변수 순서와 0 제약의 경제적 근거를 반드시 제시해야 한다.
+
+## SVAR IRF 예제
+
+```{r svar-irf, eval=FALSE}
+svar_irf <- irf(
+  svar_fit,
+  impulse = "U",
+  response = "e",
+  n.ahead = 12,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(svar_irf)
+```
+
+- SVAR IRF는 식별된 구조적 충격에 대한 반응이다.
+- 축약형 IRF보다 정책적 해석이 가능하지만, 식별 가정에 의존한다.
+
+## 통화정책 충격 예제: 모의 자료
+
+- 실제 통화정책 VAR에서는 보통 다음 변수를 포함한다.
+  - 생산 또는 산출갭
+  - 인플레이션
+  - 정책금리
+- 여기서는 수업용 모의 자료로 ordering과 IRF 해석을 연습한다.
+
+```{r simulated-policy-var, eval=FALSE}
+set.seed(123)
+n <- 240
+y <- pi <- i <- numeric(n)
+
+for (t in 2:n) {
+  y[t] <- 0.6 * y[t - 1] - 0.15 * i[t - 1] + rnorm(1)
+  pi[t] <- 0.3 * pi[t - 1] + 0.2 * y[t - 1] - 0.10 * i[t - 1] + rnorm(1)
+  i[t] <- 0.6 * i[t - 1] + 0.4 * pi[t] + 0.2 * y[t] + rnorm(1, sd = 0.5)
+}
+
+macro <- data.frame(output = y, inflation = pi, rate = i)
+fit_macro <- VAR(macro, p = 2, type = "const")
+```
+
+## 통화정책 Orthogonal IRF
+
+```{r policy-irf, eval=FALSE}
+policy_irf <- irf(
+  fit_macro,
+  impulse = "rate",
+  response = c("output", "inflation", "rate"),
+  n.ahead = 16,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(policy_irf)
+```
+
+- ordering:
+
+$$
+output \rightarrow inflation \rightarrow rate
+$$
+
+- 금리 충격은 생산과 물가의 동시적 정보를 통제한 예상치 못한 정책금리 상승으로 해석한다.
+
+## 통화정책 IRF 해석
+
+- 금리 자체:
+  - 충격 직후 상승하고 점차 사라져야 자연스럽다.
+- 생산:
+  - 긴축적 금리 충격 후 하락하면 통화긴축 효과와 부합한다.
+- 인플레이션:
+  - 일부 지연 후 하락하면 물가 안정 효과와 부합한다.
+- 반응 시차:
+  - 정책 효과가 즉시 나타나는지, 몇 분기 뒤 나타나는지 본다.
+- confidence band:
+  - 0을 넓게 포함하면 통계적 불확실성이 크다.
+
+## Ordering 민감도 분석
+
+- Cholesky IRF는 변수 순서에 민감하다.
+- 따라서 다른 ordering에서도 결과가 유지되는지 확인한다.
+
+```{r ordering-sensitivity, eval=FALSE}
+macro_alt <- macro[, c("rate", "output", "inflation")]
+fit_macro_alt <- VAR(macro_alt, p = 2, type = "const")
+
+irf_alt <- irf(
+  fit_macro_alt,
+  impulse = "rate",
+  response = c("output", "inflation"),
+  n.ahead = 16,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(irf_alt)
+```
+
+- 결과가 크게 달라지면 식별 가정에 더 신중해야 한다.
+
+## Generalized IRF
+
+- Generalized IRF는 Cholesky ordering에 의존하지 않는 IRF로 제안되었다.
+- 장점:
+  - 변수 순서에 덜 민감하다.
+- 단점:
+  - 충격들이 완전히 직교화된 구조적 충격이라는 해석은 약하다.
+  - 정책 충격의 식별을 대신해주지는 않는다.
+- 실무에서는 Cholesky IRF, generalized IRF, 다른 식별 전략을 함께 비교하기도 한다.
+
+```{r generalized-irf, eval=FALSE}
+# Pesaran-Shin generalized IRF의 기본 형태:
+# GIRF_j(h) = Phi_h Sigma_u e_j / sqrt(sigma_jj)
+
+Phi_arr <- Phi(fit_macro, nstep = 16)
+Sigma_u <- crossprod(resid(fit_macro)) / nrow(resid(fit_macro))
+
+shock_name <- "rate"
+j <- which(colnames(macro) == shock_name)
+e_j <- rep(0, ncol(macro))
+e_j[j] <- 1
+
+girf <- sapply(seq_len(dim(Phi_arr)[3]), function(h) {
+  as.vector(Phi_arr[, , h] %*% Sigma_u %*% e_j / sqrt(Sigma_u[j, j]))
+})
+
+girf <- t(girf)
+colnames(girf) <- colnames(macro)
+matplot(girf, type = "l", lty = 1, main = "Generalized IRF: rate shock")
+abline(h = 0, col = "gray50")
+```
+
+## 공적분과 VECM
+
+- 여러 시계열이 각각 비정상이어도 선형 결합이 정상일 수 있다.
+- 이를 공적분이라고 한다.
+- 예:
+  - 장기 금리와 단기 금리
+  - 소비와 소득
+  - 환율과 물가수준
+- 공적분이 있으면 단순 차분 VAR은 장기 균형 정보를 잃을 수 있다.
+- 이 경우 VECM(Error Correction Model)을 고려한다.
+
+## 공적분 검정
+
+- Engle-Granger 2단계:
+  - 두 변수의 장기 회귀식을 추정한다.
+  - 잔차에 단위근 검정을 수행한다.
+- Johansen 검정:
+  - 다변량 시스템에서 여러 공적분 관계를 동시에 검정한다.
+  - VAR 기반 접근이므로 다변량 시계열 분석과 연결된다.
+
+```{r cointegration, eval=FALSE}
+jo_test <- ca.jo(canada, type = "trace", ecdet = "const", K = 2)
+summary(jo_test)
+```
+
+## VAR 분석 체크리스트
+
+- 변수 선택:
+  - 경제이론과 연구 질문에 맞는가?
+- 변환:
+  - 로그, 차분, 성장률, 계절조정 여부가 적절한가?
+- 시차:
+  - AIC/BIC와 잔차 진단이 납득되는가?
+- 안정성:
+  - roots가 단위원 안에 있는가?
+- 예측:
+  - 표본 외 성능을 확인했는가?
+- 구조 분석:
+  - IRF/FEVD의 식별 가정이 명확한가?
+
+## IRF와 FEVD 보고 방식
+
+- 반드시 적을 것:
+  - 사용 변수와 순서
+  - 표본 기간과 자료 빈도
+  - 변환 방식
+  - VAR 시차 길이
+  - 식별 방식
+  - 충격의 크기
+  - 신뢰구간 계산 방식
+- 해석은 크기, 방향, 지속성, 불확실성을 함께 설명한다.
+
+## 흔한 실수
+
+- Granger 인과성을 구조적 인과성으로 해석한다.
+- VAR 계수 하나만 보고 정책 효과를 말한다.
+- 정상성 또는 공적분을 점검하지 않는다.
+- Cholesky ordering의 경제적 근거를 설명하지 않는다.
+- IRF의 신뢰구간을 무시한다.
+- 변수 단위를 확인하지 않고 효과 크기를 해석한다.
+- 안정적이지 않은 VAR의 IRF를 그대로 해석한다.
+
+## VAR 분석 순서
+
+- 1단계: 연구 질문과 변수 후보를 정한다.
+- 2단계: 그래프, 정상성, 변환 필요성을 확인한다.
+- 3단계: 시차 길이를 선택한다.
+- 4단계: VAR을 추정한다.
+- 5단계: 안정성과 잔차 진단을 수행한다.
+- 6단계: Granger 인과성과 예측을 확인한다.
+- 7단계: IRF와 FEVD를 계산한다.
+- 8단계: 구조적 해석이 필요하면 식별 제약을 설정한다.
+- 9단계: ordering과 식별 방식에 대한 민감도 분석을 수행한다.
+
+## 요약
+
+- VAR은 여러 경제변수의 상호 의존성과 동태적 예측 관계를 모형화한다.
+- 축약형 VAR은 예측과 동태적 상관 구조 분석에 유용하다.
+- 정책 충격의 인과효과를 해석하려면 구조적 식별이 필요하다.
+- Orthogonal IRF는 상관된 축약형 잔차를 직교 충격으로 바꿔 계산한다.
+- Cholesky 식별은 간단하지만 ordering에 민감하다.
+- FEVD는 예측오차 분산에서 각 충격의 상대적 중요성을 보여준다.
+- SVAR의 핵심은 추정 기법이 아니라 경제이론에 근거한 identification이다.

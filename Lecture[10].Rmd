@@ -1,0 +1,848 @@
+---
+title: "계량경제학 세미나"
+subtitle: "VAR 실증분석 확장: 가격 퍼즐, 장기 제약, VECM"
+author: "경제학과 김현학 교수"
+institute: "국민대학교"
+output:
+  ioslides_presentation:
+    widescreen: true
+    smaller: true
+    self_contained: true
+    fig_caption: true
+    transition: faster
+    df_print: paged
+fontsize: 11pt
+---
+
+<style>
+.title-slide hgroup h1 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+.title-slide hgroup h2,
+.title-slide hgroup h3,
+.title-slide p {
+  color: #222 !important;
+}
+slide:not(.title-slide) hgroup {
+  border-bottom: 6px solid transparent;
+  border-image: linear-gradient(to right, #e3c900 0 30%, #8bc34a 30% 70%, #3f6fca 70% 100%) 1;
+  padding-bottom: 8px;
+}
+slide:not(.title-slide) hgroup h2 {
+  color: #1368bd !important;
+  font-weight: 700;
+}
+pre.prettyprint {
+  font-size: 0.66em;
+  line-height: 1.22em;
+}
+code {
+  font-size: 0.95em;
+}
+.small {
+  font-size: 0.90em;
+}
+.xsmall {
+  font-size: 0.82em;
+}
+.tiny {
+  font-size: 0.75em;
+}
+</style>
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  eval = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7.5,
+  fig.height = 4.5,
+  fig.align = "center",
+  comment = "#>"
+)
+```
+
+## 수업의 목표
+
+- VAR 실증분석의 전체 절차를 예제로 복습한다.
+- 통화정책 충격 분석에서 가격 퍼즐(price puzzle)이 왜 발생하는지 이해한다.
+- 가격 퍼즐을 완화하기 위해 정보변수와 식별 순서를 어떻게 조정하는지 실습한다.
+- Blanchard-Quah 장기 제약 식별의 직관과 구현 방법을 익힌다.
+- 공적분이 있는 변수들에 대해 Johansen 검정과 VECM을 추정한다.
+- VECM을 VAR 형태로 변환해 IRF와 FEVD를 계산하는 방법을 배운다.
+
+## 챕터 목차
+
+- 1부: VAR 실증분석 예제 확장
+- 2부: 통화정책 충격과 가격 퍼즐
+- 3부: 장기 제약과 Blanchard-Quah 식별
+- 4부: 공적분과 VECM
+- 5부: 실증분석 보고서 작성 체크리스트
+
+## 실습 준비
+
+```{r packages, eval=FALSE}
+# 처음 한 번만 설치
+install.packages(c(
+  "vars", "urca", "forecast", "ggplot2", "dplyr",
+  "tidyr", "zoo"
+))
+
+library(vars)
+library(urca)
+library(forecast)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(zoo)
+```
+
+## VAR 실증분석의 표준 절차
+
+- 연구 질문:
+  - 어떤 충격이 어떤 변수에 미치는 동태적 효과를 알고 싶은가?
+- 자료 준비:
+  - 빈도, 표본 기간, 계절조정, 로그 변환, 차분 여부 결정.
+- 예비 분석:
+  - 그래프, ACF/PACF, 단위근 검정, 공적분 가능성 확인.
+- VAR 추정:
+  - 시차 선택, 안정성, 잔차 진단.
+- 구조 분석:
+  - ordering 또는 식별 제약 설정.
+  - IRF, FEVD 계산.
+- 강건성:
+  - 다른 시차, 다른 ordering, 다른 표본 기간 비교.
+
+## 예제 1: 수업용 거시 VAR 자료 만들기
+
+- 실제 데이터 API 없이도 실습할 수 있도록 모의 거시 자료를 만든다.
+- 변수:
+  - `output`: 산출갭 또는 경기상태
+  - `inflation`: 인플레이션
+  - `rate`: 정책금리
+  - `commodity`: 원자재 가격 또는 비용 충격 지표
+- 의도:
+  - 통화정책 충격 분석
+  - 가격 퍼즐 재현
+  - 정보변수 추가 효과 확인
+
+```{r simulate-macro-data, eval=FALSE}
+set.seed(2026)
+n <- 240
+
+output <- inflation <- rate <- commodity <- numeric(n)
+eps_y <- rnorm(n, sd = 0.7)
+eps_pi <- rnorm(n, sd = 0.5)
+eps_i <- rnorm(n, sd = 0.35)
+eps_c <- rnorm(n, sd = 0.8)
+
+for (t in 2:n) {
+  commodity[t] <- 0.65 * commodity[t - 1] + eps_c[t]
+  output[t] <- 0.60 * output[t - 1] - 0.15 * rate[t - 1] +
+    0.10 * commodity[t - 1] + eps_y[t]
+  inflation[t] <- 0.55 * inflation[t - 1] + 0.18 * output[t - 1] +
+    0.25 * commodity[t - 1] - 0.08 * rate[t - 1] + eps_pi[t]
+  rate[t] <- 0.70 * rate[t - 1] + 0.35 * inflation[t] +
+    0.20 * output[t] + 0.18 * commodity[t] + eps_i[t]
+}
+
+macro <- data.frame(
+  date = as.yearqtr(seq(as.Date("1965-01-01"), by = "quarter", length.out = n)),
+  output = output,
+  inflation = inflation,
+  rate = rate,
+  commodity = commodity
+)
+
+head(macro)
+```
+
+## 자료 시각화
+
+```{r plot-macro-data, eval=FALSE}
+macro_long <- macro |>
+  pivot_longer(-date, names_to = "variable", values_to = "value")
+
+ggplot(macro_long, aes(x = date, y = value)) +
+  geom_line(color = "#1368bd") +
+  facet_wrap(~ variable, scales = "free_y", ncol = 1) +
+  theme_minimal() +
+  labs(x = NULL, y = NULL)
+```
+
+## 정상성 점검
+
+- 모의 자료는 안정적 과정으로 만들었지만, 실제 분석에서는 반드시 확인한다.
+- ADF 검정의 귀무가설은 단위근 존재이다.
+- KPSS 검정의 귀무가설은 정상성이다.
+- 두 검정의 방향이 반대라는 점을 기억한다.
+
+```{r stationarity-macro, eval=FALSE}
+macro_y <- macro |>
+  select(output, inflation, rate, commodity)
+
+adf_results <- lapply(macro_y, function(x) {
+  summary(ur.df(x, type = "drift", lags = 4))
+})
+
+adf_results$output
+adf_results$inflation
+adf_results$rate
+adf_results$commodity
+```
+
+## 시차 선택
+
+```{r lag-selection-macro, eval=FALSE}
+VARselect(macro_y, lag.max = 8, type = "const")
+```
+
+- AIC는 긴 시차를 선택하는 경향이 있다.
+- BIC 또는 SC는 더 간결한 모형을 선택하는 경향이 있다.
+- 분기 자료에서는 경제적 지연을 고려해 2~4시차를 자주 검토한다.
+- 정보기준이 다르면 잔차 진단과 IRF 강건성을 함께 본다.
+
+## 기준 VAR 추정
+
+```{r baseline-var, eval=FALSE}
+var_base <- VAR(
+  macro_y |> select(output, inflation, rate),
+  p = 2,
+  type = "const"
+)
+
+summary(var_base)
+roots(var_base)
+serial.test(var_base, lags.pt = 12, type = "PT.asymptotic")
+```
+
+## 기준 VAR의 Ordering
+
+- 기준 ordering:
+
+$$
+output \rightarrow inflation \rightarrow rate
+$$
+
+- 해석:
+  - 생산은 같은 분기 물가와 금리 충격에 즉시 반응하지 않는다.
+  - 물가는 같은 분기 생산 충격에는 반응하지만 금리 충격에는 즉시 반응하지 않는다.
+  - 중앙은행은 같은 분기 생산과 물가 정보를 보고 금리를 조정할 수 있다.
+- 이 ordering은 통화정책 VAR에서 자주 쓰이는 재귀적 식별의 단순 버전이다.
+
+## 통화정책 IRF
+
+```{r baseline-policy-irf, eval=FALSE}
+irf_base <- irf(
+  var_base,
+  impulse = "rate",
+  response = c("output", "inflation", "rate"),
+  n.ahead = 20,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(irf_base)
+```
+
+## IRF 해석 연습
+
+- 금리 반응:
+  - 충격 직후 금리가 상승하고 점차 사라지는가?
+- 생산 반응:
+  - 긴축적 금리 충격 후 생산이 하락하는가?
+- 물가 반응:
+  - 긴축적 금리 충격 후 물가가 하락하는가?
+- 반응 시점:
+  - 효과가 즉시 나타나는가, 지연되어 나타나는가?
+- 불확실성:
+  - confidence band가 0을 포함하는가?
+
+## 가격 퍼즐이란?
+
+- 가격 퍼즐(price puzzle)은 긴축적 통화정책 충격 이후 물가가 오히려 상승하는 현상이다.
+- 이론적으로 금리 인상은 총수요를 낮추고 물가 압력을 완화할 것으로 예상된다.
+- 그런데 VAR에서 금리 충격 후 인플레이션이 상승하면 해석이 곤란해진다.
+- 대표적 설명:
+  - 중앙은행이 미래 인플레이션 정보를 보고 선제적으로 금리를 올렸는데, VAR이 그 정보를 빠뜨렸다.
+  - 원자재 가격, 기대 인플레이션, 비용 충격 변수가 누락되었다.
+  - 식별 순서가 부적절하다.
+
+## 가격 퍼즐의 직관
+
+- 중앙은행은 관측 가능한 현재 변수뿐 아니라 미래 물가 압력에 대한 정보를 가진다.
+- 연구자가 그 정보를 VAR에 넣지 않으면:
+  - 금리 인상 충격처럼 보이는 잔차에 미래 물가상승 정보가 섞인다.
+  - 그 결과 금리 충격 후 물가가 상승하는 것처럼 보일 수 있다.
+- 따라서 정보변수 추가가 가격 퍼즐 완화에 중요하다.
+
+## 가격 퍼즐 확인
+
+```{r price-puzzle-check, eval=FALSE}
+infl_resp <- irf_base$irf$rate[, "inflation"]
+plot(
+  infl_resp,
+  type = "l",
+  lwd = 2,
+  col = "#1368bd",
+  main = "Inflation response to a policy-rate shock",
+  xlab = "quarters after shock",
+  ylab = "response"
+)
+abline(h = 0, col = "gray50")
+```
+
+- 인플레이션 반응이 초기에 양수이면 가격 퍼즐 가능성이 있다.
+- 실제 데이터에서는 confidence band와 여러 specification을 함께 봐야 한다.
+
+## 정보변수 추가
+
+- 원자재 가격 또는 비용 지표를 VAR에 추가한다.
+- 새로운 ordering:
+
+$$
+commodity \rightarrow output \rightarrow inflation \rightarrow rate
+$$
+
+- 해석:
+  - 원자재 가격은 같은 분기 거시 변수에 영향을 줄 수 있다.
+  - 중앙은행은 원자재 가격, 생산, 물가 정보를 보고 금리를 조정한다.
+
+```{r augmented-var, eval=FALSE}
+var_aug <- VAR(
+  macro_y |> select(commodity, output, inflation, rate),
+  p = 2,
+  type = "const"
+)
+
+summary(var_aug)
+roots(var_aug)
+serial.test(var_aug, lags.pt = 12, type = "PT.asymptotic")
+```
+
+## 정보변수 추가 후 IRF
+
+```{r augmented-policy-irf, eval=FALSE}
+irf_aug <- irf(
+  var_aug,
+  impulse = "rate",
+  response = c("output", "inflation", "rate"),
+  n.ahead = 20,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(irf_aug)
+```
+
+## 가격 퍼즐 비교
+
+```{r compare-price-puzzle, eval=FALSE}
+resp_base <- irf_base$irf$rate[, "inflation"]
+resp_aug <- irf_aug$irf$rate[, "inflation"]
+
+plot(
+  resp_base,
+  type = "l",
+  lwd = 2,
+  col = "red",
+  ylim = range(c(resp_base, resp_aug)),
+  main = "Inflation response: baseline vs augmented VAR",
+  xlab = "quarters after shock",
+  ylab = "response"
+)
+lines(resp_aug, lwd = 2, col = "#1368bd")
+abline(h = 0, col = "gray50")
+legend(
+  "topright",
+  legend = c("Baseline VAR", "Augmented VAR"),
+  col = c("red", "#1368bd"),
+  lwd = 2,
+  bty = "n"
+)
+```
+
+## 가격 퍼즐 해석
+
+- 정보변수 추가 후 물가 반응이 낮아지거나 음수로 바뀌면:
+  - 기준 VAR의 통화정책 충격에 누락된 정보가 섞였을 가능성이 있다.
+- 그래도 가격 퍼즐이 남으면:
+  - 다른 변수 추가
+  - 다른 ordering
+  - 다른 표본 기간
+  - 금리 대신 정책 surprise 사용
+  - sign restriction 또는 external instrument 검토
+- 가격 퍼즐은 단순한 결과 오류가 아니라 식별과 정보집합의 문제이다.
+
+## FEVD로 상대적 중요도 보기
+
+```{r fevd-policy-var, eval=FALSE}
+fevd_aug <- fevd(var_aug, n.ahead = 20)
+plot(fevd_aug)
+fevd_aug$inflation
+```
+
+- 인플레이션 예측오차 분산에서 금리 충격의 비중을 확인한다.
+- 원자재 가격 충격의 비중이 크다면 비용 충격이 물가 변동의 중요한 원천일 수 있다.
+
+## Ordering 민감도 분석
+
+```{r ordering-sensitivity-policy, eval=FALSE}
+macro_alt <- macro_y |> select(output, inflation, commodity, rate)
+var_alt <- VAR(macro_alt, p = 2, type = "const")
+
+irf_alt <- irf(
+  var_alt,
+  impulse = "rate",
+  response = c("output", "inflation"),
+  n.ahead = 20,
+  ortho = TRUE,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(irf_alt)
+```
+
+- ordering을 바꾸면 IRF가 바뀔 수 있다.
+- 결과가 크게 달라지면 재귀적 식별이 강한 가정임을 인정하고 보고해야 한다.
+
+## Blanchard-Quah 식별의 질문
+
+- Blanchard and Quah 방식은 장기 제약(long-run restriction)을 이용한다.
+- 대표적 질문:
+  - 총수요 충격과 총공급 충격을 어떻게 구분할 것인가?
+- 핵심 식별 가정:
+  - 수요 충격은 산출 수준에 장기적인 영향을 미치지 않는다.
+  - 공급 충격은 산출 수준에 장기적인 영향을 미칠 수 있다.
+- 단기에는 수요 충격도 산출과 실업률을 움직일 수 있다.
+
+## 장기 제약의 직관
+
+- 단기 제약:
+  - 같은 시점 반응을 제한한다.
+  - Cholesky ordering과 연결된다.
+- 장기 제약:
+  - 충격의 누적 장기효과를 제한한다.
+  - 경제이론의 장기 중립성 가정과 연결된다.
+- 예:
+  - 통화 충격은 장기 실질 GDP 수준에 영향을 주지 않는다.
+  - 수요 충격은 장기 산출 수준에 영향을 주지 않는다.
+
+## BQ 실습용 자료 만들기
+
+- 두 변수:
+  - `dy`: 산출 성장률
+  - `unemp`: 실업률 또는 경기 부진 지표
+- 구조적 충격:
+  - 공급 충격: 산출 수준에 영구적 효과
+  - 수요 충격: 산출 수준에 일시적 효과
+
+```{r simulate-bq-data, eval=FALSE}
+set.seed(1234)
+n <- 240
+
+supply <- rnorm(n, sd = 0.7)
+demand <- rnorm(n, sd = 0.7)
+
+dy <- numeric(n)
+unemp <- numeric(n)
+
+for (t in 2:n) {
+  dy[t] <- 0.25 * dy[t - 1] + 0.60 * supply[t] + 0.35 * demand[t] -
+    0.20 * demand[t - 1]
+  unemp[t] <- 0.75 * unemp[t - 1] - 0.35 * supply[t] -
+    0.45 * demand[t] + rnorm(1, sd = 0.2)
+}
+
+bq_dat <- data.frame(dy = dy, unemp = unemp)
+plot(ts(bq_dat), main = "Simulated data for Blanchard-Quah identification")
+```
+
+## BQ VAR 추정
+
+```{r bq-var, eval=FALSE}
+VARselect(bq_dat, lag.max = 8, type = "const")
+
+var_bq <- VAR(bq_dat, p = 2, type = "const")
+summary(var_bq)
+roots(var_bq)
+serial.test(var_bq, lags.pt = 12, type = "PT.asymptotic")
+```
+
+## Blanchard-Quah 식별
+
+- `vars::BQ()`는 2변수 VAR에 대해 Blanchard-Quah 장기 제약을 적용한다.
+- 변수 순서가 중요하다.
+- 보통 첫 번째 변수는 장기 제약을 적용할 산출 성장률 변수로 둔다.
+- 장기적으로 수요 충격이 산출 수준에 영향을 주지 않는다는 제약을 부여한다.
+
+```{r bq-identification, eval=FALSE}
+bq_fit <- BQ(var_bq)
+summary(bq_fit)
+```
+
+## BQ IRF
+
+```{r bq-irf, eval=FALSE}
+bq_irf <- irf(
+  bq_fit,
+  impulse = "dy",
+  response = c("dy", "unemp"),
+  n.ahead = 24,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(bq_irf)
+```
+
+- 구조적 충격의 이름은 출력 결과와 변수 순서에 따라 확인한다.
+- 공급 충격은 산출 성장률에 지속적 누적효과를 만들 수 있다.
+- 수요 충격은 산출 수준에 장기효과가 0이 되도록 식별된다.
+
+## 누적 IRF로 장기효과 확인
+
+```{r cumulative-bq-irf, eval=FALSE}
+bq_irf_raw <- irf(
+  bq_fit,
+  impulse = "dy",
+  response = "dy",
+  n.ahead = 40,
+  boot = FALSE
+)
+
+dy_response <- bq_irf_raw$irf[[1]][, "dy"]
+cum_response <- cumsum(dy_response)
+
+plot(
+  cum_response,
+  type = "l",
+  lwd = 2,
+  col = "#1368bd",
+  main = "Cumulative response of output level",
+  xlab = "quarters after shock",
+  ylab = "cumulative response"
+)
+abline(h = 0, col = "gray50")
+```
+
+## BQ 식별의 해석과 한계
+
+- 장점:
+  - 동시적 ordering보다 장기 경제이론을 직접 사용한다.
+  - 총수요/총공급 충격 구분에 유용하다.
+- 한계:
+  - 장기 제약이 맞는지 검정하기 어렵다.
+  - 표본 길이와 추세 처리에 민감하다.
+  - 두 변수 또는 작은 시스템에 많이 사용된다.
+  - 구조 변화가 있으면 장기효과 추정이 불안정해질 수 있다.
+
+## 공적분이 왜 중요한가?
+
+- 이전 강의에서는 단위근이 있으면 차분을 고려한다고 배웠다.
+- 그러나 여러 비정상 변수들이 장기 균형관계를 공유할 수 있다.
+- 예:
+  - 소비와 소득
+  - 단기 금리와 장기 금리
+  - 물가수준과 임금
+- 이런 경우 모든 변수를 차분하면 장기 균형 정보를 잃는다.
+- VECM은 단기 변화와 장기 균형 조정을 함께 모형화한다.
+
+## 공적분의 정의
+
+- $X_t$와 $Y_t$가 각각 $I(1)$이라고 하자.
+- 어떤 $\beta$에 대해 다음 선형 결합이 정상적이면 공적분 관계가 있다.
+
+$$
+Y_t - \beta X_t \sim I(0)
+$$
+
+- 이 식은 장기 균형 관계로 해석할 수 있다.
+- 단기적으로는 균형에서 벗어날 수 있지만, 장기적으로 다시 돌아오는 힘이 존재한다.
+
+## VECM의 기본 형태
+
+- 두 변수의 단순 VECM:
+
+$$
+\Delta \mathbf{y}_t =
+\boldsymbol{\alpha}\boldsymbol{\beta}'\mathbf{y}_{t-1}
++ \Gamma_1\Delta \mathbf{y}_{t-1}
++ \cdots
++ \Gamma_{p-1}\Delta \mathbf{y}_{t-p+1}
++ \mathbf{u}_t
+$$
+
+- $\boldsymbol{\beta}'\mathbf{y}_{t-1}$:
+  - 장기 균형 오차.
+- $\boldsymbol{\alpha}$:
+  - 균형에서 벗어났을 때 조정 속도.
+
+## VECM 해석
+
+- $\beta$:
+  - 장기 균형 관계를 나타낸다.
+  - 예: 장기금리와 단기금리의 스프레드.
+- $\alpha$:
+  - 각 변수가 장기 균형 이탈에 얼마나 반응하는지 나타낸다.
+  - $\alpha$가 0이면 그 변수는 균형오차에 반응하지 않는다.
+- $\Gamma$:
+  - 단기 동태를 나타낸다.
+
+## VECM 실습 자료: Denmark
+
+- `urca` 패키지의 `Denmark` 자료를 사용한다.
+- 대표 변수:
+  - `LRM`: log real money
+  - `LRY`: log real income
+  - `IBO`: bond rate
+  - `IDE`: deposit rate
+- 통화수요와 금리 관계를 분석하는 예제로 자주 사용된다.
+
+```{r denmark-data, eval=FALSE}
+data("Denmark", package = "urca")
+den <- Denmark[, c("LRM", "LRY", "IBO", "IDE")]
+
+head(den)
+plot(ts(den), main = "Denmark data")
+```
+
+## 단위근 확인
+
+```{r denmark-unit-root, eval=FALSE}
+adf_den <- lapply(den, function(x) {
+  summary(ur.df(x, type = "trend", lags = 4))
+})
+
+adf_den$LRM
+adf_den$LRY
+adf_den$IBO
+adf_den$IDE
+
+adf_diff_den <- lapply(as.data.frame(diff(as.matrix(den))), function(x) {
+  summary(ur.df(x, type = "drift", lags = 4))
+})
+
+adf_diff_den$LRM
+```
+
+## Johansen 공적분 검정
+
+- Johansen 검정은 다변량 시스템에서 공적분 rank를 검정한다.
+- rank $r$:
+  - 공적분 관계의 개수.
+- trace test:
+  - $r=0$, $r\le 1$, $r\le 2$ 등을 순차적으로 검정.
+- max eigenvalue test:
+  - $r$개 대 $r+1$개 관계를 검정.
+
+```{r johansen-test, eval=FALSE}
+jo_trace <- ca.jo(
+  den,
+  type = "trace",
+  ecdet = "const",
+  K = 2,
+  spec = "transitory"
+)
+
+summary(jo_trace)
+```
+
+## 공적분 rank 선택
+
+- 검정통계량이 임계값보다 크면 해당 귀무가설을 기각한다.
+- 예:
+  - $r=0$ 기각, $r\le 1$ 기각하지 못함.
+  - 공적분 관계가 1개라고 판단.
+- rank 선택은 통계검정만으로 끝나지 않는다.
+  - 경제이론
+  - 변수 정의
+  - 표본 기간
+  - 결정항 설정
+  - 시차 길이
+  - 모두 함께 고려한다.
+
+## VECM 추정
+
+```{r vecm-estimation, eval=FALSE}
+vecm_r1 <- cajorls(jo_trace, r = 1)
+vecm_r1
+```
+
+- 출력에서 확인할 것:
+  - cointegrating vector: 장기 균형식.
+  - adjustment coefficients: 균형오차에 대한 조정 속도.
+  - short-run coefficients: 차분 변수의 단기 동태.
+
+## 장기 균형식 해석
+
+- 예를 들어 공적분 벡터가 다음과 같다고 하자.
+
+$$
+LRM_t - \beta_1 LRY_t - \beta_2 IBO_t - \beta_3 IDE_t = 0
+$$
+
+- 해석:
+  - 실질 통화수요는 실질소득과 금리 변수와 장기 균형관계를 가진다.
+  - 균형오차가 양수이면 실제 통화량이 장기 균형보다 높다는 뜻이다.
+- 조정계수는 이 이탈이 다음 기간 변화율에 어떻게 반영되는지 보여준다.
+
+## VECM을 VAR로 변환
+
+- IRF와 FEVD를 계산하려면 VECM을 수준 VAR 표현으로 변환할 수 있다.
+- `vars::vec2var()`를 사용한다.
+
+```{r vec2var-irf, eval=FALSE}
+vec_as_var <- vec2var(jo_trace, r = 1)
+
+vec_irf <- irf(
+  vec_as_var,
+  impulse = "LRY",
+  response = c("LRM", "IBO", "IDE"),
+  n.ahead = 20,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(vec_irf)
+```
+
+## VECM FEVD
+
+```{r vecm-fevd, eval=FALSE}
+vec_fevd <- fevd(vec_as_var, n.ahead = 20)
+plot(vec_fevd)
+vec_fevd$LRM
+```
+
+- VECM 기반 FEVD는 장기 균형관계를 반영한 예측오차 분산분해이다.
+- 단순 차분 VAR과 결과가 다를 수 있다.
+
+## 단순 차분 VAR과 비교
+
+```{r diff-var-comparison, eval=FALSE}
+den_diff <- as.data.frame(diff(as.matrix(den)))
+
+VARselect(den_diff, lag.max = 6, type = "const")
+var_diff <- VAR(den_diff, p = 2, type = "const")
+
+diff_irf <- irf(
+  var_diff,
+  impulse = "LRY",
+  response = "LRM",
+  n.ahead = 20,
+  boot = TRUE,
+  runs = 500
+)
+
+plot(diff_irf)
+```
+
+- 단순 차분 VAR은 장기 균형항을 포함하지 않는다.
+- VECM은 공적분 관계를 통해 균형 복귀 과정을 반영한다.
+
+## VECM을 선택해야 하는 경우
+
+- 변수들이 각각 $I(1)$이다.
+- 변수들 사이에 공적분 관계가 있다.
+- 장기 균형관계가 경제적으로 의미 있다.
+- 장기 균형 이탈이 단기 변화에 영향을 준다고 보는 것이 자연스럽다.
+- 예:
+  - 통화수요
+  - 금리 기간구조
+  - 소비와 소득
+  - 환율과 물가
+
+## VAR, SVAR, VECM 비교
+
+| 모형 | 자료 조건 | 핵심 목적 | 주요 산출물 |
+|---|---|---|---|
+| VAR | 정상 변수 | 예측, 동태 상관 | 예측, Granger, IRF, FEVD |
+| SVAR | 정상 변수 + 식별 제약 | 구조적 충격 분석 | structural IRF, structural FEVD |
+| VECM | I(1) 변수 + 공적분 | 장기 균형과 단기 조정 | 공적분 벡터, 조정계수, IRF |
+
+## 실습 과제 1
+
+- 기준 통화정책 VAR을 추정하시오.
+- 변수:
+  - `output`, `inflation`, `rate`
+- 할 일:
+  - 시차를 1, 2, 4로 바꾸어 추정한다.
+  - 금리 충격에 대한 IRF를 비교한다.
+  - 가격 퍼즐이 어느 specification에서 나타나는지 확인한다.
+
+```{r exercise-1, eval=FALSE}
+var_p1 <- VAR(macro_y |> select(output, inflation, rate), p = 1, type = "const")
+var_p4 <- VAR(macro_y |> select(output, inflation, rate), p = 4, type = "const")
+
+plot(irf(var_p1, impulse = "rate", response = "inflation", n.ahead = 20, ortho = TRUE))
+plot(irf(var_p4, impulse = "rate", response = "inflation", n.ahead = 20, ortho = TRUE))
+```
+
+## 실습 과제 2
+
+- 원자재 가격 변수를 포함한 VAR을 추정하시오.
+- 할 일:
+  - ordering을 두 가지 이상 바꾸어 본다.
+  - 금리 충격에 대한 물가 반응이 얼마나 달라지는지 비교한다.
+  - 어떤 ordering이 더 설득력 있는지 경제적 근거를 적는다.
+
+```{r exercise-2, eval=FALSE}
+order_1 <- macro_y |> select(commodity, output, inflation, rate)
+order_2 <- macro_y |> select(output, inflation, commodity, rate)
+
+var_o1 <- VAR(order_1, p = 2, type = "const")
+var_o2 <- VAR(order_2, p = 2, type = "const")
+
+plot(irf(var_o1, impulse = "rate", response = "inflation", n.ahead = 20, ortho = TRUE))
+plot(irf(var_o2, impulse = "rate", response = "inflation", n.ahead = 20, ortho = TRUE))
+```
+
+## 실습 과제 3
+
+- Johansen 검정에서 결정항 설정을 바꾸어 보시오.
+- 할 일:
+  - `ecdet = "none"`, `"const"`, `"trend"`를 비교한다.
+  - rank 선택이 달라지는지 확인한다.
+  - VECM의 장기 균형식이 어떻게 달라지는지 해석한다.
+
+```{r exercise-3, eval=FALSE}
+jo_none <- ca.jo(den, type = "trace", ecdet = "none", K = 2)
+jo_const <- ca.jo(den, type = "trace", ecdet = "const", K = 2)
+jo_trend <- ca.jo(den, type = "trace", ecdet = "trend", K = 2)
+
+summary(jo_none)
+summary(jo_const)
+summary(jo_trend)
+```
+
+## 보고서 작성 체크리스트
+
+- 자료:
+  - 출처, 빈도, 표본 기간, 계절조정 여부.
+- 변수 변환:
+  - 로그, 차분, 성장률, 수준 사용 이유.
+- 사전 검정:
+  - 단위근, 공적분, 시차 선택.
+- 모형:
+  - VAR/SVAR/VECM 중 선택 이유.
+- 식별:
+  - ordering, 장기 제약, 또는 다른 제약의 경제적 근거.
+- 결과:
+  - IRF와 FEVD의 방향, 크기, 지속성, 불확실성.
+- 강건성:
+  - 다른 시차, 다른 ordering, 다른 표본 기간.
+
+## 요약
+
+- 가격 퍼즐은 통화정책 충격 식별과 정보집합의 문제로 이해할 수 있다.
+- 원자재 가격, 기대 인플레이션 등 정보변수를 추가하면 가격 퍼즐이 완화될 수 있다.
+- Blanchard-Quah 식별은 장기 제약을 이용해 수요 충격과 공급 충격을 구분한다.
+- 공적분이 있으면 단순 차분 VAR 대신 VECM을 고려해야 한다.
+- VECM은 장기 균형관계와 단기 조정 과정을 동시에 모형화한다.
+- 실증 VAR 분석의 핵심은 코드 실행이 아니라 식별 가정과 경제적 해석이다.
